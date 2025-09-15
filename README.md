@@ -1,5 +1,3 @@
-# delay-tolerant-networks
-
 # Delay Tolerant Networks (DTN) Simulator
 
 ## Project Overview
