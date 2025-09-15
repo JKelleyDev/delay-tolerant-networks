@@ -61,11 +61,6 @@ main (production-ready code)
 - Performance implications
 - Test coverage
 
-**Review assignment:**
-- Pair 1 reviews Pair 2/3 code
-- Pair 2 reviews Pair 1/3 code  
-- Pair 3 reviews Pair 1/2 code
-
 #### 4. Commit Standards
 
 **Format:** `[PAIR#] [TYPE]: Brief description`
