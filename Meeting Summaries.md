@@ -3,11 +3,11 @@
 ## Decisions Made
 - Technology stack: Python
 - Pair assignments:
-  ** Pair 1: Core Networking & Protocols **
+  **Pair 1: Core Networking & Protocols**
   - Hosna, Jordan
-  ** Pair 2: Mobility & Data Management **
+  **Pair 2: Mobility & Data Management**
   - Conner, Antonio 
-  ** Pair 3: GUI and Visualization **
+  **Pair 3: GUI and Visualization**
   - Chad, Maeki
 - Communication tools: Discord, Zoom, Github Projects 
 
@@ -16,8 +16,7 @@
 - Start jotting down what your pair needs to start working on for the first sprint 
 
 ## Open Questions/Parking Lot
-- What type of scerio do we want to use for our project? Bring pitches to next meeting!!!
-- 
+- What type of scenario do we want to use for our project? Bring pitches to next meeting!!!
 
 ## Next Meeting
 - Date/Time: 17SEP2025 | 2:00 PM @ Love Library 24/7 Study Area
