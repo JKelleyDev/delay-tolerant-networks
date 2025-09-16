@@ -41,7 +41,7 @@ main (production-ready code)
 #### 2. Merge Request (MR) Process
 
 **MANDATORY WORKFLOW:**
-1. **Feature → Staging:** Requires 1 approval from another pair + automated tests passing
+1. **Feature → Staging:** Requires 1 approval from another person.
 2. **Staging → Main:** Requires 2 approvals from different pairs + full test suite passing
 
 **MR Requirements:**
