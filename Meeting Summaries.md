@@ -6,7 +6,7 @@
   **Pair 1: Core Networking & Protocols**
   - Hosna, Jordan
   **Pair 2: Mobility & Data Management**
-  - Conner, Antonio 
+  - Conner, Antonio
   **Pair 3: GUI and Visualization**
   - Chad, Maeki
 - Communication tools: Discord, Zoom, Github Projects 
