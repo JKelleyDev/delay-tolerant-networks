@@ -171,9 +171,9 @@ npm test  # or pytest
 - `#blockers` - Urgent issues needing help
 
 ### Meeting Cadence
-- **Daily standups:** 15 min, async updates in Slack
-- **Sprint planning:** Every 2 weeks, 2 hours
-- **Retrospectives:** End of each sprint, 1 hour
+- **Daily standups:** 15 min, async updates in discord
+- **Sprint planning:** Every 2 weeks, 1 hours
+- **Retrospectives:** End of each sprint, 30 minutes
 - **Integration sync:** Weekly, 1 hour across pairs
 
 ## Conflict Resolution
