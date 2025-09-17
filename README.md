@@ -100,16 +100,10 @@ main (production-ready code)
 ```bash
 # Clone repository
 git clone [repo-url]
-cd dtn-simulator
 
 # Install dependencies
 npm install  # or pip install -r requirements.txt
 
-# Setup pre-commit hooks
-pre-commit install
-
-# Run initial tests
-npm test  # or pytest
 ```
 
 ### IDE Configuration
@@ -171,7 +165,7 @@ npm test  # or pytest
 - `#blockers` - Urgent issues needing help
 
 ### Meeting Cadence
-- **Daily standups:** 15 min, async updates in discord
+- **Daily standups:** 15 min, async updates in discord - This can be with your pair partner 
 - **Sprint planning:** Every 2 weeks, 1 hours
 - **Retrospectives:** End of each sprint, 30 minutes
 - **Integration sync:** Weekly, 1 hour across pairs
