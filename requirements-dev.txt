@@ -1,0 +1,10 @@
+# Include base requirements
+-r requirements.txt
+
+# Security scanning
+bandit>=1.7.0
+safety>=2.0.0
+
+# Additional development tools
+pre-commit>=3.0.0
+twine>=4.0.0
