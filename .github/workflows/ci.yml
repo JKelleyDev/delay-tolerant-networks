@@ -54,8 +54,18 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
-        fail_ci_if_error: true
+        fail_ci_if_error: false
         verbose: true
+      continue-on-error: true
+    
+    - name: Upload coverage reports
+      if: matrix.python-version == '3.11'
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-reports
+        path: |
+          htmlcov/
+          coverage.xml
 
   security:
     runs-on: ubuntu-latest
