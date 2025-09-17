@@ -36,4 +36,4 @@ jobs:
       if: matrix.python-version == '3.11'
       run: |
         pip install pytest-cov
-        python -m pytest tests/ --cov=src --cov-report=html --cov-report=term
+        python -m pytest tests/ --cov=src --cov-report=html --cov-report=term --cov-fail-under=80
