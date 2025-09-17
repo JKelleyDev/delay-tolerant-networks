@@ -92,16 +92,6 @@ open htmlcov/index.html
 - **Coverage**: Bundle creation, validation, serialization, TTL handling
 - **Satellite Features**: Long-delay tolerance, priority handling
 
-## 🏗️ DTN Bundle Implementation
-
-### Core Features
-- ✅ **Bundle Class**: Complete data structure with all required fields
-- ✅ **ID Generation**: SHA256-based unique identifiers  
-- ✅ **TTL Management**: Countdown mechanism for satellite delays
-- ✅ **Serialization**: JSON-based network transmission format
-- ✅ **Validation**: Comprehensive bundle validation
-- ✅ **Satellite Support**: Priority levels, store-and-forward flags
-
 ### Usage Example
 ```python
 from src.bundle import Bundle, BundlePriority
