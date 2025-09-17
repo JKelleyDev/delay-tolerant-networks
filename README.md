@@ -250,13 +250,69 @@ make coverage  # See coverage report
 
 ## 🏆 Project Status
 
-✅ **Sprint 1 Complete** - DTN Bundle Foundation  
-- Bundle data structures implemented
+### Current Progress: Sprint 1 (Weeks 1-2) - Foundation & Architecture
+
+**Goal:** Establish architecture and make satellite vs terrestrial decision
+
+#### ✅ **Completed (Pair 1 - Partial):**
+- Bundle layer foundation (IDs, TTL, basic message structure) 
+- Bundle data structures with satellite-specific features
 - Comprehensive test suite (93% coverage)
 - CI/CD pipeline with quality gates
 - Professional development workflow
 
-**Next Steps**: Integration with routing algorithms and mobility models
+#### 🚧 **In Progress:**
+- **Architecture Decision:** Satellite vs BLE/Wi-Fi Direct (end of week 1)
+- PHY abstraction layer with chosen technology stubs
+- Simple Epidemic routing as proof-of-concept
+- Define networking APIs for other pairs
+
+#### ⏳ **Remaining Sprint 1 Tasks:**
+
+**Pair 1 - Core Networking:**
+- Complete architecture decision (satellite vs terrestrial)
+- PHY abstraction layer implementation
+- Basic Epidemic routing implementation
+- Networking API definitions for other pairs
+
+**Pair 2 - Mobility & Data:**
+- Contact plan CSV parser (works for both satellite and terrestrial)
+- **If satellite:** Orbital mechanics basics and satellite contact windows
+- **If terrestrial:** Random Waypoint mobility model
+- Experiment framework setup and data collection interfaces
+- Node state tracking and logging foundation
+
+**Pair 3 - GUI & Visualization:**
+- 3D map framework with basic node rendering
+- **Satellite consideration:** Earth globe view vs flat terrain
+- Project UI shell and basic controls
+- Geographic/orbital coordinate system and camera controls
+
+### Sprint Planning Overview
+
+#### Sprint 2 (Weeks 3-4): Core Implementation
+- Complete all 3 routing algorithms (Epidemic, PRoPHET, Spray-and-Wait)
+- Technology-specific implementations (satellite or terrestrial)
+- Basic ARQ and buffer management
+- 3D visualization foundations
+
+#### Sprint 3 (Weeks 5-6): Advanced Features
+- Long delay tolerance and store-and-forward optimization
+- Fragmentation and reassembly
+- Custody transfer mechanisms
+- Advanced buffer policies
+
+#### Sprint 4 (Weeks 7-8): Integration & Experiments
+- System integration and optimization
+- Execute experiments E1 and E2
+- Performance profiling and bottleneck fixes
+- Complete visualization features
+
+#### Sprint 5 (Weeks 9-10): Final Experiments & Presentation
+- Final bug fixes and edge case handling
+- Complete experiment E3
+- Comprehensive results analysis
+- Final UI polish and demo preparation
 
 ---
 
