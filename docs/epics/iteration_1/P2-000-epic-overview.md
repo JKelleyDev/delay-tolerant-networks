@@ -78,7 +78,9 @@ graph TD
 
 ### Module Structure
 ```
-src/satellite/
+src/
+├── bundle.py                 # Existing DTN bundle system
+├── main.py                   # Existing main entry point
 ├── orbital_mechanics.py      # P2-001: Core calculations
 ├── contact_prediction.py     # P2-002: Contact windows  
 ├── satellite_mobility.py     # P2-003: Mobility integration
