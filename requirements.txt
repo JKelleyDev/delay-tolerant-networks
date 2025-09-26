@@ -1,6 +1,7 @@
 # Core dependencies
 pytest>=7.0.0
 pytest-cov>=4.0.0
+skyfield>=1.46
 
 # Development dependencies
 black>=23.0.0

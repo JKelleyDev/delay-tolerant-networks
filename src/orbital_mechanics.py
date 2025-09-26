@@ -1,8 +1,10 @@
 """
 Orbital Mechanics Module for DTN Satellite Simulation
 
-This module provides core orbital mechanics calculations for satellite position
-propagation, orbital parameter conversions, and coordinate system transformations.
+Provides core orbital mechanics calculations for:
+- Satellite position propagation
+- Orbital parameter conversions
+- Coordinate system transformations (ECI, ECEF, geodetic)
 
 Pair 2 Implementation Tasks:
 - Complete all TODO functions with proper orbital mechanics calculations
@@ -20,15 +22,17 @@ import math
 from typing import Tuple, List
 from dataclasses import dataclass
 import time
+from skyfield.api import load
+from skyfield.sgp4lib import EarthSatellite
 
 
 @dataclass
 class OrbitalElements:
-    """Keplerian orbital elements defining a satellite orbit"""
+    """Keplerian orbital elements defining a satellite orbit."""
 
     semi_major_axis: float  # km
-    eccentricity: float  # 0-1 (0=circular, <1=elliptical)
-    inclination: float  # degrees (0-180)
+    eccentricity: float  # 0-1
+    inclination: float  # degrees
     raan: float  # Right Ascension of Ascending Node (degrees)
     arg_perigee: float  # Argument of perigee (degrees)
     true_anomaly: float  # True anomaly (degrees)
@@ -37,186 +41,246 @@ class OrbitalElements:
 
 @dataclass
 class Position3D:
-    """3D position vector in specified coordinate system"""
+    """3D position vector in a specified coordinate system."""
 
-    x: float  # km
-    y: float  # km
-    z: float  # km
-    coordinate_system: str = "ECI"  # ECI, ECEF, or geodetic
+    x: float
+    y: float
+    z: float
+    coordinate_system: str = "ECI"
 
     def magnitude(self) -> float:
-        """Calculate vector magnitude"""
+        """Calculate vector magnitude."""
         return math.sqrt(self.x**2 + self.y**2 + self.z**2)
 
 
 @dataclass
 class Velocity3D:
-    """3D velocity vector in specified coordinate system"""
+    """3D velocity vector in a specified coordinate system."""
 
-    vx: float  # km/s
-    vy: float  # km/s
-    vz: float  # km/s
+    vx: float
+    vy: float
+    vz: float
     coordinate_system: str = "ECI"
 
 
 @dataclass
 class StateVector:
-    """Combined position and velocity state vector"""
+    """Combined position and velocity state vector."""
 
     position: Position3D
     velocity: Velocity3D
-    timestamp: float  # Unix timestamp
+    timestamp: float
 
 
 class OrbitalMechanics:
-    """Core orbital mechanics calculations for satellite simulation"""
+    """Core orbital mechanics calculations for satellite simulation."""
 
     # Earth parameters
-    EARTH_RADIUS = 6378.137  # km (WGS84)
-    EARTH_MU = 398600.4418  # km³/s² (gravitational parameter)
-    EARTH_ROTATION_RATE = 7.2921159e-5  # rad/s (sidereal)
+    EARTH_RADIUS: float = 6378.137  # km (WGS84)
+    EARTH_MU: float = 398600.4418  # km³/s²
+    EARTH_ROTATION_RATE: float = 7.2921159e-5  # rad/s
 
-    def __init__(self):
-        """Initialize orbital mechanics calculator"""
-        pass
+    def __init__(self) -> None:
+        self.ts = load.timescale()
 
     def calculate_orbital_period(self, semi_major_axis: float) -> float:
         """
-        Calculate orbital period using Kepler's third law
+        Compute orbital period using Kepler's third law.
+
+        T = 2 * pi * sqrt(a^3 / mu)
 
         Args:
-            semi_major_axis: Semi-major axis in km
+            semi_major_axis (float): Semi-major axis (km)
 
         Returns:
-            Orbital period in seconds
-
-        TODO: Implement Kepler's third law calculation
-        Formula: T = 2π√(a³/μ)
+            float: Orbital period (s)
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement orbital period calculation")
+        return 2 * math.pi * math.sqrt(semi_major_axis**3 / self.EARTH_MU)
 
-    def calculate_orbital_velocity(
-        self, radius: float, semi_major_axis: float
-    ) -> float:
+    def calculate_orbital_velocity(self, r: float, a: float) -> float:
         """
-        Calculate orbital velocity at given radius
+        Compute orbital velocity using the Vis-Viva equation.
+
+        v = sqrt(mu * (2/r - 1/a))
 
         Args:
-            radius: Current distance from Earth center (km)
-            semi_major_axis: Semi-major axis of orbit (km)
+            radius (float): Distance from Earth's center (km)
+            semi_major_axis (float): Semi-major axis (km)
 
         Returns:
-            Orbital velocity in km/s
-
-        TODO: Implement vis-viva equation
-        Formula: v = √(μ(2/r - 1/a))
+            float: Orbital velocity (km/s)
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement orbital velocity calculation")
+        return math.sqrt(self.EARTH_MU * (2.0 / r - 1.0 / a))
 
     def kepler_to_cartesian(
-        self, elements: OrbitalElements, time_offset: float = 0
+        self, elements: OrbitalElements, time_offset: float = 0.0
     ) -> StateVector:
         """
-        Convert Keplerian orbital elements to Cartesian state vector
+        Convert Keplerian orbital elements to Cartesian ECI state vector.
+
+        Uses Newton-Raphson solution to Kepler's equation for eccentric anomaly.
 
         Args:
-            elements: Orbital elements
-            time_offset: Time offset from epoch (seconds)
+            elements (OrbitalElements): Keplerian elements
+            time_offset (float): Time since epoch (s)
 
         Returns:
-            StateVector with position and velocity in ECI coordinates
-
-        TODO: Implement complete Keplerian to Cartesian conversion
-        Steps:
-        1. Calculate mean anomaly from time offset
-        2. Solve Kepler's equation for eccentric anomaly
-        3. Calculate true anomaly
-        4. Transform to orbital plane coordinates
-        5. Rotate to ECI coordinates using Euler angles
+            StateVector: ECI position and velocity at given time
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement Keplerian to Cartesian conversion")
+        a = elements.semi_major_axis
+        e = elements.eccentricity
+        i = math.radians(elements.inclination)
+        raan = math.radians(elements.raan)
+        argp = math.radians(elements.arg_perigee)
+        nu0 = math.radians(elements.true_anomaly)
+
+        n = math.sqrt(self.EARTH_MU / a**3)
+        M = nu0 + n * time_offset
+
+        # Solve Kepler's equation E - e*sin(E) = M
+        E = M
+        for _ in range(20):
+            E -= (E - e * math.sin(E) - M) / (1 - e * math.cos(E))
+
+        nu = 2 * math.atan2(
+            math.sqrt(1 + e) * math.sin(E / 2), math.sqrt(1 - e) * math.cos(E / 2)
+        )
+        r = a * (1 - e * math.cos(E))
+
+        x_orb = r * math.cos(nu)
+        y_orb = r * math.sin(nu)
+
+        vx_orb = -math.sqrt(self.EARTH_MU / a) / r * math.sin(E)
+        vy_orb = math.sqrt(self.EARTH_MU / a) / r * math.sqrt(1 - e**2) * math.cos(E)
+
+        # Rotation matrices
+        cos_raan, sin_raan = math.cos(raan), math.sin(raan)
+        cos_i, sin_i = math.cos(i), math.sin(i)
+        cos_argp, sin_argp = math.cos(argp), math.sin(argp)
+
+        R11 = cos_raan * cos_argp - sin_raan * sin_argp * cos_i
+        R12 = -cos_raan * sin_argp - sin_raan * cos_argp * cos_i
+        R21 = sin_raan * cos_argp + cos_raan * sin_argp * cos_i
+        R22 = -sin_raan * sin_argp + cos_raan * cos_argp * cos_i
+        R31 = sin_argp * sin_i
+        R32 = cos_argp * sin_i
+
+        x = R11 * x_orb + R12 * y_orb
+        y = R21 * x_orb + R22 * y_orb
+        z = R31 * x_orb + R32 * y_orb
+        vx = R11 * vx_orb + R12 * vy_orb
+        vy = R21 * vx_orb + R22 * vy_orb
+        vz = R31 * vx_orb + R32 * vy_orb
+
+        return StateVector(
+            Position3D(x, y, z, "ECI"),
+            Velocity3D(vx, vy, vz, "ECI"),
+            elements.epoch + time_offset,
+        )
 
     def propagate_orbit(
         self, elements: OrbitalElements, target_time: float
     ) -> StateVector:
         """
-        Propagate satellite orbit to target time
+        Simplified Keplerian orbit propagation.
 
         Args:
-            elements: Initial orbital elements
-            target_time: Target time (Unix timestamp)
+            elements (OrbitalElements): Keplerian elements
+            target_time (float): Unix timestamp for propagation
 
         Returns:
-            StateVector at target time
-
-        TODO: Implement orbit propagation
-        For LEO: Use simplified Keplerian propagation
-        For accuracy: Integrate SGP4/SDP4 algorithms using skyfield library
+            StateVector: ECI state vector at target_time
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement orbit propagation")
+        dt = target_time - elements.epoch
+        return self.kepler_to_cartesian(elements, dt)
+
+    # ------------------------
+    # New TLE/SGP4 integration
+    # ------------------------
+
+    def propagate_tle(
+        self,
+        tle_line1: str,
+        tle_line2: str,
+        name: str = "TLE Sat",
+        ts_time: float | None = None,
+    ) -> Tuple[float, float]:
+        """
+        Propagate a satellite from TLE using SGP4.
+
+        Args:
+            tle_line1: First TLE line.
+            tle_line2: Second TLE line.
+            name: Optional satellite name.
+            ts_time: Optional UNIX timestamp; defaults to now.
+
+        Returns:
+            Tuple(lat, lon) in degrees.
+        """
+        satellite = EarthSatellite(tle_line1, tle_line2, name, self.ts)
+
+        if ts_time is None:
+            t = self.ts.now()
+        else:
+            t = self.ts.utc(*time.gmtime(ts_time)[:6])
+
+        geocentric = satellite.at(t)
+        subpoint = geocentric.subpoint()
+        return subpoint.latitude.degrees, subpoint.longitude.degrees
 
     def eci_to_ecef(self, eci_position: Position3D, timestamp: float) -> Position3D:
         """
-        Convert ECI (Earth-Centered Inertial) to ECEF (Earth-Centered Earth-Fixed)
+        Convert ECI coordinates to ECEF using Earth rotation.
 
         Args:
-            eci_position: Position in ECI coordinates
-            timestamp: Time for Earth rotation calculation
+            eci_position (Position3D): Position in ECI frame
+            timestamp (float): Unix timestamp
 
         Returns:
-            Position in ECEF coordinates
-
-        TODO: Implement ECI to ECEF transformation
-        Account for Earth's rotation using Greenwich Sidereal Time
+            Position3D: Position in ECEF frame
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement ECI to ECEF conversion")
+        theta = self.EARTH_ROTATION_RATE * (timestamp % 86400)
+        cos_t, sin_t = math.cos(theta), math.sin(theta)
+        x = cos_t * eci_position.x + sin_t * eci_position.y
+        y = -sin_t * eci_position.x + cos_t * eci_position.y
+        z = eci_position.z
+        return Position3D(x, y, z, "ECEF")
 
     def ecef_to_geodetic(self, ecef_position: Position3D) -> Tuple[float, float, float]:
         """
-        Convert ECEF to geodetic coordinates (latitude, longitude, altitude)
+        Convert ECEF coordinates to geodetic (lat, lon, alt) using spherical Earth.
 
         Args:
-            ecef_position: Position in ECEF coordinates
+            ecef_position (Position3D): ECEF coordinates
 
         Returns:
-            Tuple of (latitude_deg, longitude_deg, altitude_km)
-
-        TODO: Implement ECEF to geodetic conversion
-        Use iterative algorithm for ellipsoidal Earth model (WGS84)
+            Tuple[float, float, float]: (latitude in degrees, longitude in degrees,
+                altitude in km)
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement ECEF to geodetic conversion")
+        x, y, z = ecef_position.x, ecef_position.y, ecef_position.z
+        lon = math.degrees(math.atan2(y, x))
+        r = math.sqrt(x**2 + y**2)
+        lat = math.degrees(math.atan2(z, r))
+        alt = math.sqrt(x**2 + y**2 + z**2) - self.EARTH_RADIUS
+        return lat, lon, alt
 
     def calculate_ground_track(self, state_vector: StateVector) -> Tuple[float, float]:
         """
-        Calculate subsatellite point (ground track) for given state vector
+        Compute subsatellite ground track latitude and longitude.
 
         Args:
-            state_vector: Satellite state vector in ECI
+            state_vector (StateVector): ECI state vector
 
         Returns:
-            Tuple of (latitude_deg, longitude_deg)
-
-        TODO: Implement ground track calculation
-        1. Convert ECI to ECEF coordinates
-        2. Convert ECEF to geodetic coordinates
-        3. Return latitude and longitude
+            Tuple[float, float]: (latitude deg, longitude deg)
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement ground track calculation")
+        ecef = self.eci_to_ecef(state_vector.position, state_vector.timestamp)
+        lat, lon, _ = self.ecef_to_geodetic(ecef)
+        return lat, lon
 
 
 class ConstellationGenerator:
     """Generate satellite constellation configurations"""
-
-    def __init__(self):
-        """Initialize constellation generator"""
-        pass
 
     def generate_walker_constellation(
         self,
@@ -225,56 +289,18 @@ class ConstellationGenerator:
         altitude_km: float,
         inclination_deg: float,
     ) -> List[OrbitalElements]:
-        """
-        Generate Walker constellation (evenly distributed satellites)
-
-        Args:
-            total_satellites: Total number of satellites
-            orbital_planes: Number of orbital planes
-            altitude_km: Orbital altitude
-            inclination_deg: Orbital inclination
-
-        Returns:
-            List of orbital elements for each satellite
-
-        TODO: Implement Walker constellation generation
-        1. Calculate satellites per plane
-        2. Distribute planes evenly in RAAN
-        3. Distribute satellites evenly in each plane
-        4. Generate orbital elements for each satellite
-        """
-        # TODO: Implement this function
+        """TODO: Implement Walker constellation generation"""
         raise NotImplementedError("Pair 2: Implement Walker constellation generation")
 
     def generate_preset_constellation(self, preset_name: str) -> List[OrbitalElements]:
-        """
-        Generate predefined constellation configurations
-
-        Args:
-            preset_name: Name of preset constellation
-                       ("leo_iridium", "leo_starlink", "meo_gps",
-                        "geo_minimal", "heo_molniya")
-
-        Returns:
-            List of orbital elements for constellation
-
-        TODO: Implement preset constellation configurations
-        Use parameters from satellite_communication_architecture.md
-        """
-        # TODO: Implement this function
+        """TODO: Implement preset constellation configurations"""
         raise NotImplementedError("Pair 2: Implement preset constellation generation")
 
 
-# Example usage and test cases
+# Example usage
 if __name__ == "__main__":
-    """
-    Example usage for testing implementations
-    Run this after implementing the TODO functions
-    """
-
-    # Example orbital elements for ISS-like orbit
     iss_elements = OrbitalElements(
-        semi_major_axis=6793.0,  # ~415 km altitude
+        semi_major_axis=6793.0,
         eccentricity=0.0003,
         inclination=51.6,
         raan=180.0,
@@ -282,32 +308,27 @@ if __name__ == "__main__":
         true_anomaly=0.0,
         epoch=time.time(),
     )
-
-    # Initialize calculator
     orbital_calc = OrbitalMechanics()
-    constellation_gen = ConstellationGenerator()
+    period = orbital_calc.calculate_orbital_period(iss_elements.semi_major_axis)
+    print(f"ISS orbital period: {period / 60:.1f} min")
 
-    try:
-        # Test orbital period calculation
-        period = orbital_calc.calculate_orbital_period(iss_elements.semi_major_axis)
-        print(f"ISS orbital period: {period / 60:.1f} minutes")
 
-        # Test orbit propagation
-        future_time = time.time() + 3600  # 1 hour from now
-        state = orbital_calc.propagate_orbit(iss_elements, future_time)
-        print(f"ISS position in 1 hour: {state.position}")
+# Convenience wrappers for testing
+def orbital_period(semi_major_axis: float) -> float:
+    return OrbitalMechanics().calculate_orbital_period(semi_major_axis)
 
-        # Test ground track calculation
-        lat, lon = orbital_calc.calculate_ground_track(state)
-        print(f"ISS ground track: {lat:.2f}°N, {lon:.2f}°E")
 
-        # Test constellation generation
-        iridium_constellation = constellation_gen.generate_preset_constellation(
-            "leo_iridium"
-        )
-        print(
-            f"Generated Iridium constellation: {len(iridium_constellation)} satellites"
-        )
+def orbital_velocity(radius: float, semi_major_axis: float) -> float:
+    return OrbitalMechanics().calculate_orbital_velocity(radius, semi_major_axis)
 
-    except NotImplementedError as e:
-        print(f"Function not yet implemented: {e}")
+
+def keplerian_to_cartesian(
+    elements: OrbitalElements, time_offset: float = 0
+) -> StateVector:
+    """Wrapper for OrbitalMechanics.kepler_to_cartesian"""
+    return OrbitalMechanics().kepler_to_cartesian(elements, time_offset)
+
+
+def ground_track(state_vector: StateVector) -> Tuple[float, float]:
+    """Wrapper for OrbitalMechanics.calculate_ground_track"""
+    return OrbitalMechanics().calculate_ground_track(state_vector)
