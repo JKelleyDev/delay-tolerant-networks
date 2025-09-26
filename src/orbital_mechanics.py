@@ -160,13 +160,10 @@ class OrbitalMechanics:
 
         R11 = cos_raan * cos_argp - sin_raan * sin_argp * cos_i
         R12 = -cos_raan * sin_argp - sin_raan * cos_argp * cos_i
-        R13 = sin_raan * sin_i
         R21 = sin_raan * cos_argp + cos_raan * sin_argp * cos_i
         R22 = -sin_raan * sin_argp + cos_raan * cos_argp * cos_i
-        R23 = -cos_raan * sin_i
         R31 = sin_argp * sin_i
         R32 = cos_argp * sin_i
-        R33 = cos_i
 
         x = R11 * x_orb + R12 * y_orb
         y = R21 * x_orb + R22 * y_orb
@@ -257,7 +254,8 @@ class OrbitalMechanics:
             ecef_position (Position3D): ECEF coordinates
 
         Returns:
-            Tuple[float, float, float]: (latitude in degrees, longitude in degrees, altitude in km)
+            Tuple[float, float, float]: (latitude in degrees, longitude in degrees,
+                altitude in km)
         """
         x, y, z = ecef_position.x, ecef_position.y, ecef_position.z
         lon = math.degrees(math.atan2(y, x))
@@ -312,7 +310,7 @@ if __name__ == "__main__":
     )
     orbital_calc = OrbitalMechanics()
     period = orbital_calc.calculate_orbital_period(iss_elements.semi_major_axis)
-    print(f"ISS orbital period: {period/60:.1f} min")
+    print(f"ISS orbital period: {period / 60:.1f} min")
 
 
 # Convenience wrappers for testing
