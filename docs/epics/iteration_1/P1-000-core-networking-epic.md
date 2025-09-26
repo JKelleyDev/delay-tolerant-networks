@@ -4,7 +4,7 @@
 **Priority:** Critical  
 **Total Story Points:** 52  
 **Timeline:** 3-4 weeks  
-**Status:** Foundation Complete, Core Implementation Active
+**Status:** Ready for Implementation
 
 ## Epic Overview
 
@@ -43,12 +43,12 @@ This epic enables comprehensive DTN protocol implementation with:
   - PRoPHET routing with contact prediction
   - Spray-and-Wait routing with copy management
 
-### **High Priority (Network Stack)**
 - **P1-003: Implement ARQ and Buffer Management** (12 pts) - *Data Link Layer*
   - Stop-and-wait or sliding window ARQ
   - Buffer drop policies (oldest/largest/random)
   - Flow control and congestion management
 
+### **High Priority (Network Stack)**
 - **P1-004: Implement Session and Connection Management** (10 pts) - *Session Layer*
   - Contact session establishment and teardown
   - Connection state management across network partitions
