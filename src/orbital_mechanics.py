@@ -25,21 +25,24 @@ import time
 from skyfield.api import load
 from skyfield.sgp4lib import EarthSatellite
 
+
 @dataclass
 class OrbitalElements:
     """Keplerian orbital elements defining a satellite orbit."""
+
     semi_major_axis: float  # km
-    eccentricity: float     # 0-1
-    inclination: float      # degrees
-    raan: float             # Right Ascension of Ascending Node (degrees)
-    arg_perigee: float      # Argument of perigee (degrees)
-    true_anomaly: float     # True anomaly (degrees)
-    epoch: float            # Unix timestamp of orbital elements
+    eccentricity: float  # 0-1
+    inclination: float  # degrees
+    raan: float  # Right Ascension of Ascending Node (degrees)
+    arg_perigee: float  # Argument of perigee (degrees)
+    true_anomaly: float  # True anomaly (degrees)
+    epoch: float  # Unix timestamp of orbital elements
 
 
 @dataclass
 class Position3D:
     """3D position vector in a specified coordinate system."""
+
     x: float
     y: float
     z: float
@@ -47,12 +50,13 @@ class Position3D:
 
     def magnitude(self) -> float:
         """Calculate vector magnitude."""
-        return math.sqrt(self.x ** 2 + self.y ** 2 + self.z ** 2)
+        return math.sqrt(self.x**2 + self.y**2 + self.z**2)
 
 
 @dataclass
 class Velocity3D:
     """3D velocity vector in a specified coordinate system."""
+
     vx: float
     vy: float
     vz: float
@@ -62,6 +66,7 @@ class Velocity3D:
 @dataclass
 class StateVector:
     """Combined position and velocity state vector."""
+
     position: Position3D
     velocity: Velocity3D
     timestamp: float
@@ -71,13 +76,13 @@ class OrbitalMechanics:
     """Core orbital mechanics calculations for satellite simulation."""
 
     # Earth parameters
-    EARTH_RADIUS: float = 6378.137      # km (WGS84)
-    EARTH_MU: float = 398600.4418       # km³/s²
+    EARTH_RADIUS: float = 6378.137  # km (WGS84)
+    EARTH_MU: float = 398600.4418  # km³/s²
     EARTH_ROTATION_RATE: float = 7.2921159e-5  # rad/s
-    
+
     def __init__(self) -> None:
         self.ts = load.timescale()
-        
+
     def calculate_orbital_period(self, semi_major_axis: float) -> float:
         """
         Compute orbital period using Kepler's third law.
@@ -107,7 +112,9 @@ class OrbitalMechanics:
         """
         return math.sqrt(self.EARTH_MU * (2.0 / r - 1.0 / a))
 
-    def kepler_to_cartesian(self, elements: OrbitalElements, time_offset: float = 0.0) -> StateVector:
+    def kepler_to_cartesian(
+        self, elements: OrbitalElements, time_offset: float = 0.0
+    ) -> StateVector:
         """
         Convert Keplerian orbital elements to Cartesian ECI state vector.
 
@@ -127,7 +134,7 @@ class OrbitalMechanics:
         argp = math.radians(elements.arg_perigee)
         nu0 = math.radians(elements.true_anomaly)
 
-        n = math.sqrt(self.EARTH_MU / a ** 3)
+        n = math.sqrt(self.EARTH_MU / a**3)
         M = nu0 + n * time_offset
 
         # Solve Kepler's equation E - e*sin(E) = M
@@ -135,15 +142,16 @@ class OrbitalMechanics:
         for _ in range(20):
             E -= (E - e * math.sin(E) - M) / (1 - e * math.cos(E))
 
-        nu = 2 * math.atan2(math.sqrt(1 + e) * math.sin(E / 2),
-                            math.sqrt(1 - e) * math.cos(E / 2))
+        nu = 2 * math.atan2(
+            math.sqrt(1 + e) * math.sin(E / 2), math.sqrt(1 - e) * math.cos(E / 2)
+        )
         r = a * (1 - e * math.cos(E))
 
         x_orb = r * math.cos(nu)
         y_orb = r * math.sin(nu)
 
         vx_orb = -math.sqrt(self.EARTH_MU / a) / r * math.sin(E)
-        vy_orb = math.sqrt(self.EARTH_MU / a) / r * math.sqrt(1 - e ** 2) * math.cos(E)
+        vy_orb = math.sqrt(self.EARTH_MU / a) / r * math.sqrt(1 - e**2) * math.cos(E)
 
         # Rotation matrices
         cos_raan, sin_raan = math.cos(raan), math.sin(raan)
@@ -167,11 +175,15 @@ class OrbitalMechanics:
         vy = R21 * vx_orb + R22 * vy_orb
         vz = R31 * vx_orb + R32 * vy_orb
 
-        return StateVector(Position3D(x, y, z, "ECI"),
-                           Velocity3D(vx, vy, vz, "ECI"),
-                           elements.epoch + time_offset)
+        return StateVector(
+            Position3D(x, y, z, "ECI"),
+            Velocity3D(vx, vy, vz, "ECI"),
+            elements.epoch + time_offset,
+        )
 
-    def propagate_orbit(self, elements: OrbitalElements, target_time: float) -> StateVector:
+    def propagate_orbit(
+        self, elements: OrbitalElements, target_time: float
+    ) -> StateVector:
         """
         Simplified Keplerian orbit propagation.
 
@@ -188,7 +200,7 @@ class OrbitalMechanics:
     # ------------------------
     # New TLE/SGP4 integration
     # ------------------------
-    
+
     def propagate_tle(
         self,
         tle_line1: str,
@@ -198,7 +210,7 @@ class OrbitalMechanics:
     ) -> Tuple[float, float]:
         """
         Propagate a satellite from TLE using SGP4.
-        
+
         Args:
             tle_line1: First TLE line.
             tle_line2: Second TLE line.
@@ -218,7 +230,7 @@ class OrbitalMechanics:
         geocentric = satellite.at(t)
         subpoint = geocentric.subpoint()
         return subpoint.latitude.degrees, subpoint.longitude.degrees
-    
+
     def eci_to_ecef(self, eci_position: Position3D, timestamp: float) -> Position3D:
         """
         Convert ECI coordinates to ECEF using Earth rotation.
@@ -249,9 +261,9 @@ class OrbitalMechanics:
         """
         x, y, z = ecef_position.x, ecef_position.y, ecef_position.z
         lon = math.degrees(math.atan2(y, x))
-        r = math.sqrt(x ** 2 + y ** 2)
+        r = math.sqrt(x**2 + y**2)
         lat = math.degrees(math.atan2(z, r))
-        alt = math.sqrt(x ** 2 + y ** 2 + z ** 2) - self.EARTH_RADIUS
+        alt = math.sqrt(x**2 + y**2 + z**2) - self.EARTH_RADIUS
         return lat, lon, alt
 
     def calculate_ground_track(self, state_vector: StateVector) -> Tuple[float, float]:
@@ -302,16 +314,22 @@ if __name__ == "__main__":
     period = orbital_calc.calculate_orbital_period(iss_elements.semi_major_axis)
     print(f"ISS orbital period: {period/60:.1f} min")
 
+
 # Convenience wrappers for testing
 def orbital_period(semi_major_axis: float) -> float:
     return OrbitalMechanics().calculate_orbital_period(semi_major_axis)
 
+
 def orbital_velocity(radius: float, semi_major_axis: float) -> float:
     return OrbitalMechanics().calculate_orbital_velocity(radius, semi_major_axis)
 
-def keplerian_to_cartesian(elements: OrbitalElements, time_offset: float = 0) -> StateVector:
+
+def keplerian_to_cartesian(
+    elements: OrbitalElements, time_offset: float = 0
+) -> StateVector:
     """Wrapper for OrbitalMechanics.kepler_to_cartesian"""
     return OrbitalMechanics().kepler_to_cartesian(elements, time_offset)
+
 
 def ground_track(state_vector: StateVector) -> Tuple[float, float]:
     """Wrapper for OrbitalMechanics.calculate_ground_track"""

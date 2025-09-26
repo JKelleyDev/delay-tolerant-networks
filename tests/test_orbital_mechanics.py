@@ -26,19 +26,20 @@ from skyfield.sgp4lib import EarthSatellite
 # Functional Tests
 # ==========================
 
-# -All orbital period calculations accurate within 1% of known values 
+# -All orbital period calculations accurate within 1% of known values
 
-# -Orbital velocity calculations match vis-viva equation results 
+# -Orbital velocity calculations match vis-viva equation results
 
-# -Keplerian to Cartesian conversion produces valid ECI coordinates 
+# -Keplerian to Cartesian conversion produces valid ECI coordinates
 
-# -Orbit propagation maintains orbital energy conservation (for circular orbits) 
+# -Orbit propagation maintains orbital energy conservation (for circular orbits)
 
-# -ECI to ECEF conversion accounts for Earth rotation correctly 
+# -ECI to ECEF conversion accounts for Earth rotation correctly
 
-# -ECEF to geodetic conversion accurate within 1 meter for test points 
+# -ECEF to geodetic conversion accurate within 1 meter for test points
 
 # -Ground track calculations match expected subsatellite points
+
 
 class TestOrbitalMechanics(unittest.TestCase):
     """Functional unit tests for orbital mechanics calculations."""
@@ -141,13 +142,14 @@ class TestOrbitalMechanics(unittest.TestCase):
 # Validation Tests
 # ==========================
 
-# - ISS orbital period: ~93 minutes (5580 seconds ±60 seconds) 
+# - ISS orbital period: ~93 minutes (5580 seconds ±60 seconds)
 
-# - LEO velocity at 550km: ~7.6 km/s (±0.1 km/s) 
+# - LEO velocity at 550km: ~7.6 km/s (±0.1 km/s)
 
-# - GEO orbital period: 24 hours (86400 seconds ±300 seconds) 
+# - GEO orbital period: 24 hours (86400 seconds ±300 seconds)
 
 # - Known satellite ground tracks match TLE predictions within 0.1°
+
 
 class TestOrbitalMechanicsValidation(unittest.TestCase):
     """Validation against known satellite parameters (ISS, GEO, LEO)."""
@@ -177,6 +179,7 @@ class TestOrbitalMechanicsValidation(unittest.TestCase):
 # ==========================
 # Skyfield TLE Validation
 # ==========================
+
 
 class TestTLEComparison(unittest.TestCase):
     """
@@ -230,6 +233,7 @@ class TestTLEComparison(unittest.TestCase):
 # - Coordinate transformation: < 1ms
 
 # - Batch processing 1000 satellites: < 1 second
+
 
 class TestPerformance(unittest.TestCase):
     """Performance tests for propagation and transformations."""
