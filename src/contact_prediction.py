@@ -12,9 +12,13 @@ Pair 2 Implementation Tasks:
 - Integrate with orbital mechanics for real-time contact prediction
 
 Dependencies:
+- astropy: pip install astropy
 - numpy: pip install numpy
 - src.orbital_mechanics: Local orbital mechanics module
 """
+from astropy import units as u
+from astropy import coordinates as coord
+from astropy.time import Time
 import math
 from typing import List, Dict, Tuple, Optional, NamedTuple
 from dataclasses import dataclass
@@ -48,17 +52,16 @@ class GroundStation:
         Returns:
             Position3D in ECEF coordinate system
 
-        TODO: Implement geodetic to ECEF conversion
         Use WGS84 ellipsoid parameters for accurate conversion
         """
-        a: float = OrbitalMechanics.EARTH_RADIUS * 1000 # convert radius to meters
-        n: float = a/math.sqrt(1 - (self.e2 * math.sin(math.radians(self.latitude_deg)) ** 2))
+        a = OrbitalMechanics.EARTH_RADIUS
+        n = a/math.sqrt(1 - (self.e2 * math.sin(math.radians(self.latitude_deg)) ** 2))
 
-        x: float = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.cos(math.radians(self.longitude_deg))
-        y: float = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.sin(math.radians(self.longitude_deg))
-        z: float = (n * (1 - self.e2) + self.altitude_m) * math.sin(math.radians(self.latitude_deg))
+        x = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.cos(math.radians(self.longitude_deg))
+        y = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.sin(math.radians(self.longitude_deg))
+        z = (n * (1 - self.e2) + self.altitude_m) * math.sin(math.radians(self.latitude_deg))
 
-        return Position3D(x=x, y=y, z=z)
+        return Position3D(x, y, z, coordinate_system="ECEF")
 
 
 class ContactWindow(NamedTuple):
@@ -107,7 +110,7 @@ class ContactPredictor:
         self,
         satellite_position: Position3D,
         ground_station: GroundStation,
-        timestamp: float,
+        timestamp: Time,
     ) -> Tuple[float, float]:
         """
         Calculate elevation and azimuth angles from ground station to satellite
@@ -115,12 +118,11 @@ class ContactPredictor:
         Args:
             satellite_position: Satellite position in ECI coordinates
             ground_station: Ground station configuration
-            timestamp: Time for coordinate conversion
+            timestamp: Astropy time object for coordinate conversion
 
         Returns:
             Tuple of (elevation_deg, azimuth_deg)
 
-        TODO: Implement elevation/azimuth calculation
         Steps:
         1. Convert satellite ECI position to ECEF
         2. Convert ground station geodetic to ECEF
@@ -128,6 +130,13 @@ class ContactPredictor:
         4. Transform to topocentric (SEZ) coordinates
         5. Calculate elevation and azimuth angles
         """
+
+        # calculate range vector (implements steps 1-3)
+        distance = self.calculate_range(satellite_position, ground_station, timestamp)
+
+
+
+
         # TODO: Implement this function
         raise NotImplementedError("Pair 2: Implement elevation/azimuth calculation")
 
@@ -135,7 +144,7 @@ class ContactPredictor:
         self,
         satellite_position: Position3D,
         ground_station: GroundStation,
-        timestamp: float,
+        timestamp: Time,
     ) -> float:
         """
         Calculate range (distance) from ground station to satellite
@@ -148,11 +157,25 @@ class ContactPredictor:
         Returns:
             Range in kilometers
 
-        TODO: Implement range calculation
         Calculate Euclidean distance between satellite and ground station
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement range calculation")
+        # satellite ECI to ECEF, utilizes GCRS ECI frame
+        cartrep = coord.CartesianRepresentation(x=satellite_position.x, y=satellite_position.y, z=satellite_position.z,
+                                                unit=u.m)
+        gcrs = coord.GCRS(cartrep, obstime=timestamp)
+        itrs = gcrs.transform_to(coord.ICRS(obstime=timestamp))  # convert to ECEF frame
+        loc = coord.EarthLocation(*itrs.cartesian.cartrep)
+
+        satellite_coordinates = Position3D(loc.lat, loc.lon, loc.height, coordinate_system="ECEF")
+
+        # ground station geodetic to ECEF
+        ground_station_coordinates = ground_station.to_ecef_position()
+
+        # calculate range vector
+        x_dist = (ground_station_coordinates.x - satellite_coordinates.x) ** 2
+        y_dist = (ground_station_coordinates.y - satellite_coordinates.y) ** 2
+        z_dist = (ground_station_coordinates.z - ground_station_coordinates.z) ** 2
+        return math.sqrt(x_dist + y_dist + z_dist)
 
     def is_visible(
         self,
