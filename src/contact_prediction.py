@@ -15,12 +15,12 @@ Dependencies:
 - numpy: pip install numpy
 - src.orbital_mechanics: Local orbital mechanics module
 """
-
+import math
 from typing import List, Dict, Tuple, Optional, NamedTuple
 from dataclasses import dataclass
 import time
 
-from .orbital_mechanics import (
+from src.orbital_mechanics import (
     OrbitalElements,
     Position3D,
     OrbitalMechanics,
@@ -39,6 +39,7 @@ class GroundStation:
     min_elevation_deg: float = 10.0  # minimum elevation for contact
     antenna_diameter_m: float = 10.0
     max_data_rate_mbps: float = 100.0
+    e2: float = 6.6943799901377997e-3 # WGS-84 eccentricity squared
 
     def to_ecef_position(self) -> Position3D:
         """
@@ -50,8 +51,14 @@ class GroundStation:
         TODO: Implement geodetic to ECEF conversion
         Use WGS84 ellipsoid parameters for accurate conversion
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement geodetic to ECEF conversion")
+        a: float = OrbitalMechanics.EARTH_RADIUS * 1000 # convert radius to meters
+        n: float = a/math.sqrt(1 - (self.e2 * math.sin(math.radians(self.latitude_deg)) ** 2))
+
+        x: float = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.cos(math.radians(self.longitude_deg))
+        y: float = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.sin(math.radians(self.longitude_deg))
+        z: float = (n * (1 - self.e2) + self.altitude_m) * math.sin(math.radians(self.latitude_deg))
+
+        return Position3D(x=x, y=y, z=z)
 
 
 class ContactWindow(NamedTuple):
