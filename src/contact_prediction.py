@@ -172,9 +172,9 @@ class ContactPredictor:
         ground_station_coordinates = ground_station.to_ecef_position()
 
         # calculate range vector
-        x_dist = (ground_station_coordinates.x - satellite_coordinates.x) ** 2
-        y_dist = (ground_station_coordinates.y - satellite_coordinates.y) ** 2
-        z_dist = (ground_station_coordinates.z - ground_station_coordinates.z) ** 2
+        x_dist = (satellite_coordinates.x - ground_station_coordinates.x) ** 2
+        y_dist = (satellite_coordinates.y - ground_station_coordinates.y) ** 2
+        z_dist = (satellite_coordinates.z - ground_station_coordinates.z) ** 2
         return math.sqrt(x_dist + y_dist + z_dist)
 
     def is_visible(
