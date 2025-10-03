@@ -22,7 +22,11 @@ from dataclasses import dataclass, asdict
 import time
 from pathlib import Path
 
-from .satellite_mobility import SatelliteMobilityModel, MobilityState
+try:
+    from .satellite_mobility import SatelliteMobilityModel, MobilityState
+except ImportError:
+    # Handle case when module is imported directly
+    from satellite_mobility import SatelliteMobilityModel, MobilityState  # type: ignore
 
 
 @dataclass
