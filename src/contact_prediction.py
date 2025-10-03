@@ -20,12 +20,21 @@ from typing import List, Dict, Tuple, Optional, NamedTuple
 from dataclasses import dataclass
 import time
 
-from .orbital_mechanics import (
-    OrbitalElements,
-    Position3D,
-    OrbitalMechanics,
-    Velocity3D,
-)
+try:
+    from .orbital_mechanics import (
+        OrbitalElements,
+        Position3D,
+        OrbitalMechanics,
+        Velocity3D,
+    )
+except ImportError:
+    # Handle case when module is imported directly
+    from orbital_mechanics import (  # type: ignore
+        OrbitalElements,
+        Position3D,
+        OrbitalMechanics,
+        Velocity3D,
+    )
 
 
 @dataclass

@@ -22,12 +22,20 @@ from dataclasses import dataclass, asdict
 import time
 from pathlib import Path
 
-from .orbital_mechanics import (
-    OrbitalElements,
-    Position3D,
-    OrbitalMechanics,
-)
-from .contact_prediction import ContactPredictor, ContactWindow, GroundStation
+try:
+    from .orbital_mechanics import (
+        OrbitalElements,
+        Position3D,
+        OrbitalMechanics,
+    )
+    from .contact_prediction import ContactPredictor, ContactWindow, GroundStation
+except ImportError:
+    # Handle case when module is imported directly
+    from orbital_mechanics import (  # type: ignore
+        OrbitalElements,
+        Position3D,
+        OrbitalMechanics,
+    )
 
 
 @dataclass
