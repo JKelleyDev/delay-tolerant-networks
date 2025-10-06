@@ -19,7 +19,7 @@ Dependencies:
 from astropy import units as u
 from astropy import coordinates as coord
 from astropy.time import Time
-import math
+import numpy as np
 from typing import List, Dict, Tuple, Optional, NamedTuple
 from dataclasses import dataclass
 import time
@@ -54,12 +54,12 @@ class GroundStation:
 
         Use WGS84 ellipsoid parameters for accurate conversion
         """
-        a = OrbitalMechanics.EARTH_RADIUS
-        n = a/math.sqrt(1 - (self.e2 * math.sin(math.radians(self.latitude_deg)) ** 2))
-
-        x = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.cos(math.radians(self.longitude_deg))
-        y = (n + self.altitude_m) * math.cos(math.radians(self.latitude_deg)) * math.sin(math.radians(self.longitude_deg))
-        z = (n * (1 - self.e2) + self.altitude_m) * math.sin(math.radians(self.latitude_deg))
+        a = OrbitalMechanics.EARTH_RADIUS * 1000 #convert to meters
+        n = a/np.sqrt(1 - (self.e2 * np.sin(np.deg2rad(self.latitude_deg)) ** 2))
+        
+        x = (n + self.altitude_m) * np.cos(np.deg2rad(self.latitude_deg)) * np.cos(np.deg2rad(self.longitude_deg))
+        y = (n + self.altitude_m) * np.cos(np.deg2rad(self.latitude_deg)) * np.sin(np.deg2rad(self.longitude_deg))
+        z = ((n + self.altitude_m) * (1 - self.e2)) * np.sin(np.deg2rad(self.latitude_deg))
 
         return Position3D(x, y, z, coordinate_system="ECEF")
 
@@ -131,10 +131,44 @@ class ContactPredictor:
         5. Calculate elevation and azimuth angles
         """
 
-        # calculate range vector (implements steps 1-3)
-        distance = self.calculate_range(satellite_position, ground_station, timestamp)
+        # satellite ECI to ECEF, utilizes GCRS ECI frame
+        cartrep = coord.CartesianRepresentation(x=satellite_position.x, y=satellite_position.y, z=satellite_position.z,
+                                                unit=u.m)
+        gcrs = coord.GCRS(cartrep, obstime=timestamp)
+        itrs = gcrs.transform_to(coord.ICRS(obstime=timestamp))  # convert to ECEF frame
+        loc = coord.EarthLocation(*itrs.cartesian.cartrep)
 
+        satellite_coordinates = Position3D(loc.lat, loc.lon, loc.height, coordinate_system="ECEF")
 
+        # ground station geodetic to ECEF
+        ground_station_coordinates = ground_station.to_ecef_position()
+
+        #calculate range vector, target - observer
+        d = np.array([
+            satellite_coordinates.x - ground_station_coordinates.x,
+            satellite_coordinates.y - ground_station_coordinates.y,
+            satellite_coordinates.z - ground_station_coordinates.z,
+        ])
+
+        # transform to SEZ coordinates
+        sin_lat = np.sin(ground_station_coordinates.x); cos_lat = np.cos(ground_station_coordinates.x)
+        sin_lon = np.sin(ground_station_coordinates.y); cos_lon = np.cos(ground_station_coordinates.y)
+
+        R = np.array([
+            [sin_lat*cos_lon, sin_lat*sin_lon, -cos_lat],
+            [-sin_lon, cos_lon, 0],
+            [cos_lat*cos_lon, cos_lat*sin_lon, sin_lat],
+        ])
+
+        south, east, zenith = R.dot(d)
+
+        #calculate elevation and azimuth angles
+        range_sez = np.sqrt(south**2 + east**2 + zenith**2) #account for change in perspective
+        elevation = np.arctan2(zenith, np.sqrt(south**2 + east**2))
+        azimuth = np.arctan2(east, -south)
+        #make sure azimuth is within [0,360)
+        azimuth = azimuth % (2 * np.pi)
+        return np.rad2deg(elevation), np.rad2deg(azimuth)
 
 
         # TODO: Implement this function
@@ -155,7 +189,7 @@ class ContactPredictor:
             timestamp: Time for coordinate conversion
 
         Returns:
-            Range in kilometers
+            Range in meters
 
         Calculate Euclidean distance between satellite and ground station
         """
@@ -171,11 +205,11 @@ class ContactPredictor:
         # ground station geodetic to ECEF
         ground_station_coordinates = ground_station.to_ecef_position()
 
-        # calculate range vector
+        # calculate euclidian distance
         x_dist = (satellite_coordinates.x - ground_station_coordinates.x) ** 2
         y_dist = (satellite_coordinates.y - ground_station_coordinates.y) ** 2
         z_dist = (satellite_coordinates.z - ground_station_coordinates.z) ** 2
-        return math.sqrt(x_dist + y_dist + z_dist)
+        return np.sqrt(x_dist + y_dist + z_dist)
 
     def is_visible(
         self,
