@@ -23,8 +23,13 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from enum import Enum
 
-from .orbital_mechanics import OrbitalElements, OrbitalMechanics
-from .contact_prediction import GroundStation
+try:
+    from .orbital_mechanics import OrbitalElements, OrbitalMechanics
+    from .contact_prediction import GroundStation
+except ImportError:
+    # Handle case when module is imported directly
+    from orbital_mechanics import OrbitalElements, OrbitalMechanics  # type: ignore
+    from contact_prediction import GroundStation  # type: ignore
 
 
 class ConstellationType(Enum):
