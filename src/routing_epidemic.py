@@ -1,6 +1,6 @@
 ﻿import time
-from typing import List, Dict, Set
-from src.bundle import Bundle, BundlePriority
+from typing import List, Dict, Set, Any
+from src.bundle import Bundle
 
 
 class EpidemicRouter:
@@ -18,7 +18,7 @@ class EpidemicRouter:
         self.node_id = node_id
         self.buffer_manager = buffer_manager
         self.known_bundles: Set[str] = set()  # for duplicate suppression
-        self.neighbor_summaries: Dict[str, Dict[str, any]] = {}
+        self.neighbor_summaries: Dict[str, Dict[str, Any]] = {}
 
     # ----------------------------------------------------------------------
     # ROUTE BUNDLE (Flooding)
@@ -28,13 +28,14 @@ class EpidemicRouter:
         Flood a bundle to all available contacts unless duplicate suppression applies.
         Returns list of peer_ids the bundle was sent to.
         """
-        sent_to = []
+        sent_to: List[str] = []
         if bundle.id in self.known_bundles:
             # Already sent/received before
             return sent_to
 
         # Mark as known
-        self.known_bundles.add(bundle.id)
+        if bundle.id is not None:
+            self.known_bundles.add(bundle.id)
 
         for contact in contacts:
             # Check contact window and link quality before sending
@@ -43,7 +44,6 @@ class EpidemicRouter:
 
         return sent_to
 
-   
     # ----------------------------------------------------------------------
     # ANTI-ENTROPY (Summary Vector Exchange)
     # ----------------------------------------------------------------------
@@ -73,7 +73,6 @@ class EpidemicRouter:
         self.neighbor_summaries[peer_id] = summary_vector
         return summary_vector
 
-
     # ----------------------------------------------------------------------
     # DUPLICATE SUPPRESSION / FLOODING CONTROL
     # ----------------------------------------------------------------------
@@ -84,7 +83,9 @@ class EpidemicRouter:
     # ----------------------------------------------------------------------
     # TRANSMISSION PRIORITY CALCULATION
     # ----------------------------------------------------------------------
-    def calculate_transmission_priority(self, bundles: List[Bundle], contact_duration: float):
+    def calculate_transmission_priority(
+        self, bundles: List[Bundle], contact_duration: float
+    ):
         """
         Order bundles for transmission based on:
         - Priority (CRITICAL > HIGH > NORMAL > LOW)
@@ -97,9 +98,9 @@ class EpidemicRouter:
             remaining_ttl = b.remaining_ttl()
             # Lower TTL = higher urgency, so inverse TTL
             return (
-                -b.priority.value,     # higher priority first
-                remaining_ttl,         # smaller remaining TTL first
-                b.creation_time or now
+                -b.priority.value,  # higher priority first
+                remaining_ttl,  # smaller remaining TTL first
+                b.creation_time or now,
             )
 
         ordered = sorted(bundles, key=bundle_sort_key)

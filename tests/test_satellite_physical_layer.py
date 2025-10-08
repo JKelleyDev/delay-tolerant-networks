@@ -1,6 +1,4 @@
-﻿import math
-import pytest
-from src.satellite_physical_layer import SatellitePhysicalLayer
+﻿from src.satellite_physical_layer import SatellitePhysicalLayer
 
 
 def test_fspl_calculation():

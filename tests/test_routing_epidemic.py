@@ -9,6 +9,7 @@ from src.routing_epidemic import EpidemicRouter
 # ----------------------------
 class DummyBufferManager:
     """Simple stand-in for real buffer manager."""
+
     def __init__(self):
         self.bundles = {}
 
@@ -24,6 +25,7 @@ class DummyBufferManager:
 
 class DummyContact:
     """Simple contact window stand-in."""
+
     def __init__(self, peer_id: str, duration: float = 30.0, quality: float = 1.0):
         self.peer_id = peer_id
         self.duration = duration
