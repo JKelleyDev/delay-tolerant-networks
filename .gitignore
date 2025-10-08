@@ -37,4 +37,10 @@ Thumbs.db
 # Report Tex File Junk Output
 *.aux
 *.out
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 *.log
