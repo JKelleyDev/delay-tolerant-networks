@@ -425,7 +425,7 @@ if __name__ == "__main__":
         )
         omx = OrbitalMechanics()
         period = omx.calculate_orbital_period(iss.semi_major_axis)
-        print(f"ISS-like orbital period: {period/60:.1f} min")
+        print(f"ISS-like orbital period: {period / 60:.1f} min")
         st = omx.propagate_orbit(iss, time.time())
         ecef = omx.eci_to_ecef(st.position, time.time())
         lat, lon, alt = omx.ecef_to_geodetic(ecef)
