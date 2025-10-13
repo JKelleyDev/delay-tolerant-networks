@@ -16,7 +16,17 @@ It uses **React + Vite** with **Three.js, React-Three-Fiber, and Drei** to rende
 ⚠️ **Note:** If you just installed Node.js, you may need to **close and reopen your terminal** before running the commands below so that `node` and `npm` are recognized.
 
 ## Getting Started
+# Navigate to SRC folder
+cd src
+
+# Install backend dependencies
+pip install -r requirements.txt
+
+# Run the API
+python orbital_mechanics.py api
+
 # Navigate to GUI folder
+cd ..
 cd gui
 
 # Install dependencies
@@ -26,3 +36,13 @@ npm install
 npm run dev
 
 # Click the http:// link  to open the globe in browser
+
+# Controls
+Press 1: Earth centered 
+Left drag: Rotate
+Right drag: Pan
+Scroll: Zoom
+Press 2: Follow Satellite
+Press 3: Ground Mode
+Press 4: Free flight
+*** These features are clunky, press ESC to get your cursor back ***

@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import time
 from skyfield.api import load  # type: ignore
 from skyfield.sgp4lib import EarthSatellite  # type: ignore
+from flask import Flask, jsonify
 
 
 @dataclass
@@ -298,19 +299,143 @@ class ConstellationGenerator:
 
 
 # Example usage
+# -----------------------------
+# API / Test entrypoint (drop-in)
+# -----------------------------
 if __name__ == "__main__":
-    iss_elements = OrbitalElements(
-        semi_major_axis=6793.0,
-        eccentricity=0.0003,
-        inclination=51.6,
-        raan=180.0,
-        arg_perigee=90.0,
-        true_anomaly=0.0,
-        epoch=time.time(),
-    )
-    orbital_calc = OrbitalMechanics()
-    period = orbital_calc.calculate_orbital_period(iss_elements.semi_major_axis)
-    print(f"ISS orbital period: {period / 60:.1f} min")
+    import sys
+
+    # Run: python orbital_mechanics.py api
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "api":
+        from flask_cors import CORS
+
+        app = Flask(__name__)
+        CORS(app)
+
+        orbital_calc = OrbitalMechanics()
+
+        # Example satellites (tweak as you like)
+        # Earth-centered (ECI at epoch; propagated each request)
+        satellites = {
+            "SAT-001": {
+                "ele": OrbitalElements(
+                    semi_major_axis=6793.0,
+                    eccentricity=0.0003,
+                    inclination=51.6,
+                    raan=180.0,
+                    arg_perigee=90.0,
+                    true_anomaly=0.0,
+                    epoch=time.time(),
+                ),
+                "ref": "EARTH",
+            },
+            "SAT-002": {
+                "ele": OrbitalElements(
+                    semi_major_axis=6871.0,
+                    eccentricity=0.0001,
+                    inclination=97.6,
+                    raan=90.0,
+                    arg_perigee=0.0,
+                    true_anomaly=180.0,
+                    epoch=time.time(),
+                ),
+                "ref": "EARTH",
+            },
+            # Treat these as Mars-orbit demo by tagging ref="MARS"
+            # (Front-end will offset by Mars mesh position.)
+            "SAT-M1": {
+                "ele": OrbitalElements(
+                    semi_major_axis=3390.0 + 400.0,  # crude LMO radius (km)
+                    eccentricity=0.0005,
+                    inclination=25.0,
+                    raan=30.0,
+                    arg_perigee=0.0,
+                    true_anomaly=0.0,
+                    epoch=time.time(),
+                ),
+                "ref": "MARS",
+            },
+            "SAT-M2": {
+                "ele": OrbitalElements(
+                    semi_major_axis=3390.0 + 700.0,
+                    eccentricity=0.0010,
+                    inclination=60.0,
+                    raan=200.0,
+                    arg_perigee=45.0,
+                    true_anomaly=180.0,
+                    epoch=time.time(),
+                ),
+                "ref": "MARS",
+            },
+        }
+
+        @app.route("/api/satellites")
+        def get_satellites():
+            now = time.time()
+            speed = 120.0
+            print(f"[API] speed={speed}")
+
+            result = []
+            for sat_id, cfg in satellites.items():
+                ele = cfg["ele"]
+                try:
+                    # scale time passed since epoch
+                    dt = (now - ele.epoch) * speed
+                    target_time = ele.epoch + dt
+
+                    st = orbital_calc.propagate_orbit(ele, target_time)
+                    result.append(
+                        {
+                            "name": sat_id,
+                            "x": st.position.x,
+                            "y": st.position.y,
+                            "z": st.position.z,
+                            "ref": cfg.get("ref", "EARTH"),
+                            "frame": "ECI",
+                        }
+                    )
+                except Exception as e:
+                    print(f"[WARN] {sat_id} propagate error: {e}")
+            return jsonify({"satellites": result})
+
+        @app.route("/api/health")
+        def health():
+            return jsonify({"status": "ok", "satellites": len(satellites)})
+
+        print("=" * 60)
+        print("🛰  DTN Satellite API Server")
+        print("=" * 60)
+        print("GET  /api/health        -> status")
+        print("GET  /api/satellites    -> positions (ECEF km)")
+        print("Note: 'ref' == 'MARS' will render near your Mars mesh.")
+        print("=" * 60)
+        app.run(host="0.0.0.0", port=5000, debug=True)
+
+    else:
+        # TEST MODE
+        print("Running orbital mechanics tests…")
+        iss = OrbitalElements(
+            semi_major_axis=6793.0,
+            eccentricity=0.0003,
+            inclination=51.6,
+            raan=180.0,
+            arg_perigee=90.0,
+            true_anomaly=0.0,
+            epoch=time.time(),
+        )
+        omx = OrbitalMechanics()
+        period = omx.calculate_orbital_period(iss.semi_major_axis)
+        print(f"ISS-like orbital period: {period / 60:.1f} min")
+        st = omx.propagate_orbit(iss, time.time())
+        ecef = omx.eci_to_ecef(st.position, time.time())
+        lat, lon, alt = omx.ecef_to_geodetic(ecef)
+        print(
+            f"ECI pos: ({st.position.x:.1f}, "
+            f"{st.position.y:.1f}, "
+            f"{st.position.z:.1f}) km"
+        )
+        print(f"ECEF/ground track: {lat:.2f}°, {lon:.2f}°, alt {alt:.1f} km")
+        print("Done.")
 
 
 # Convenience wrappers for testing
