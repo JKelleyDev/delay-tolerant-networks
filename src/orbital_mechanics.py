@@ -386,14 +386,16 @@ if __name__ == "__main__":
                     target_time = ele.epoch + dt
 
                     st = orbital_calc.propagate_orbit(ele, target_time)
-                    result.append({
-                        "name": sat_id,
-                        "x": st.position.x,
-                        "y": st.position.y,
-                        "z": st.position.z,
-                        "ref": cfg.get("ref", "EARTH"),
-                        "frame": "ECI"
-                    })
+                    result.append(
+                        {
+                            "name": sat_id,
+                            "x": st.position.x,
+                            "y": st.position.y,
+                            "z": st.position.z,
+                            "ref": cfg.get("ref", "EARTH"),
+                            "frame": "ECI",
+                        }
+                    )
                 except Exception as e:
                     print(f"[WARN] {sat_id} propagate error: {e}")
             return jsonify({"satellites": result})
@@ -429,7 +431,9 @@ if __name__ == "__main__":
         st = omx.propagate_orbit(iss, time.time())
         ecef = omx.eci_to_ecef(st.position, time.time())
         lat, lon, alt = omx.ecef_to_geodetic(ecef)
-        print(f"ECI pos: ({st.position.x:.1f}, {st.position.y:.1f}, {st.position.z:.1f}) km")
+        print(
+            f"ECI pos: ({st.position.x:.1f}, {st.position.y:.1f}, {st.position.z:.1f}) km"
+        )
         print(f"ECEF/ground track: {lat:.2f}°, {lon:.2f}°, alt {alt:.1f} km")
         print("Done.")
 
