@@ -24,7 +24,7 @@ from dataclasses import dataclass
 import time
 from skyfield.api import load  # type: ignore
 from skyfield.sgp4lib import EarthSatellite  # type: ignore
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 
 
 @dataclass
@@ -304,11 +304,9 @@ class ConstellationGenerator:
 # -----------------------------
 if __name__ == "__main__":
     import sys
-    import time
 
     # Run: python orbital_mechanics.py api
     if len(sys.argv) > 1 and sys.argv[1].lower() == "api":
-        from flask import Flask, jsonify
         from flask_cors import CORS
 
         app = Flask(__name__)
@@ -432,7 +430,9 @@ if __name__ == "__main__":
         ecef = omx.eci_to_ecef(st.position, time.time())
         lat, lon, alt = omx.ecef_to_geodetic(ecef)
         print(
-            f"ECI pos: ({st.position.x:.1f}, {st.position.y:.1f}, {st.position.z:.1f}) km"
+            f"ECI pos: ({st.position.x:.1f}, "
+            f"{st.position.y:.1f}, "
+            f"{st.position.z:.1f}) km"
         )
         print(f"ECEF/ground track: {lat:.2f}°, {lon:.2f}°, alt {alt:.1f} km")
         print("Done.")
