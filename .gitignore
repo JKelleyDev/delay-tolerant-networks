@@ -33,3 +33,16 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Ignore Visual Studio files
+.vs/
+*.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pdb
+*.db
+*.DS_Store
+.env
+.venv/
+
