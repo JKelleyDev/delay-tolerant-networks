@@ -1,6 +1,5 @@
-import time
-from typing import Dict, List, Set
-from src.bundle import Bundle, BundlePriority
+from typing import Dict, List, Set, Any
+from src.bundle import Bundle
 
 
 class EpidemicRouter:
@@ -16,8 +15,12 @@ class EpidemicRouter:
         self.seen_bundles: Set[str] = set()
         self.routing_table: Dict[str, List[Bundle]] = {}
 
-    def route_bundle(self, bundle: Bundle, contacts: List["Contact"]):
+    def route_bundle(
+        self, bundle: Bundle, contacts: List["Contact"], timestamp: float = 0.0
+    ):
         """Flood the bundle to all available contacts except duplicates."""
+        if bundle.id is None:
+            return []
         if bundle.id in self.seen_bundles:
             return []
 
@@ -29,12 +32,14 @@ class EpidemicRouter:
                 sent.append(contact.peer_id)
         return sent
 
-    def exchange_summary_vector(self, peer_id: str, contact: "Contact") -> Dict[str, List[str]]:
+    def exchange_summary_vector(
+        self, peer_id: str, contact: "Contact"
+    ) -> Dict[str, Any]:
         """
         Simulate anti-entropy summary vector exchange.
         Returns local summary vector for testing.
         """
-        owned = [b.id for b in self.buffer_manager.bundles]
+        owned = [b.id for b in self.buffer_manager.bundles if b.id is not None]
         return {"node_id": self.node_id, "owned_bundles": owned}
 
     def calculate_transmission_priority(self, bundle: Bundle) -> int:

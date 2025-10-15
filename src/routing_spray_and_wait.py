@@ -12,9 +12,12 @@ Reference: Spyropoulos et al., “Spray and Wait: An Efficient Routing Scheme
 for Intermittently Connected Mobile Networks”.
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, TYPE_CHECKING
 from src.routing_epidemic import EpidemicRouter
 from src.bundle import Bundle
+
+if TYPE_CHECKING:
+    from src.routing_epidemic import Contact
 
 
 class SprayAndWaitRouter(EpidemicRouter):
@@ -22,7 +25,13 @@ class SprayAndWaitRouter(EpidemicRouter):
     A DTN router that implements the Spray-and-Wait routing strategy.
     """
 
-    def __init__(self, node_id: str, buffer_manager, initial_copies: int = 10, spray_threshold: int = 1):
+    def __init__(
+        self,
+        node_id: str,
+        buffer_manager,
+        initial_copies: int = 10,
+        spray_threshold: int = 1,
+    ):
         """
         Initialize the router.
         :param node_id: Unique node identifier
@@ -38,13 +47,17 @@ class SprayAndWaitRouter(EpidemicRouter):
     # ----------------------------------------------------------------------
     # Core routing interface
     # ----------------------------------------------------------------------
-    def route_bundle(self, bundle: Bundle, contacts: List[Any], timestamp: float) -> List[str]:
+    def route_bundle(
+        self, bundle: Bundle, contacts: List["Contact"], timestamp: float = 0.0
+    ) -> List[str]:
         """
         Main routing decision logic.
         Determines whether the bundle is in the Spray or Wait phase.
         Returns the list of peer IDs to forward to.
         """
         bundle_id = bundle.id
+        if bundle_id is None:
+            return []
 
         # If this is the first time seeing the bundle, initialize copy count
         if bundle_id not in self.copy_table:
@@ -63,7 +76,9 @@ class SprayAndWaitRouter(EpidemicRouter):
     # ----------------------------------------------------------------------
     # Spray phase
     # ----------------------------------------------------------------------
-    def spray_phase_routing(self, bundle_id: str, contacts: List[Any], strategy: str = "binary") -> Dict[str, int]:
+    def spray_phase_routing(
+        self, bundle_id: str, contacts: List["Contact"], strategy: str = "binary"
+    ) -> Dict[str, int]:
         """
         Distribute bundle copies among available contacts.
         Supported strategies:
@@ -71,7 +86,7 @@ class SprayAndWaitRouter(EpidemicRouter):
           - "equal": distribute evenly across all peers
         Returns: {peer_id: copies_allocated}
         """
-        peers = [getattr(c, "peer_id", None) for c in contacts if getattr(c, "peer_id", None)]
+        peers = [c.peer_id for c in contacts if hasattr(c, "peer_id")]
         if not peers:
             return {}
 
@@ -112,7 +127,9 @@ class SprayAndWaitRouter(EpidemicRouter):
     # ----------------------------------------------------------------------
     # Wait phase
     # ----------------------------------------------------------------------
-    def wait_phase_routing(self, bundle: Bundle, contacts: List[Any]) -> List[str]:
+    def wait_phase_routing(
+        self, bundle: Bundle, contacts: List["Contact"]
+    ) -> List[str]:
         """
         Wait phase: forward only to destination node.
         Returns [destination] if contact is available, else [].
@@ -121,7 +138,8 @@ class SprayAndWaitRouter(EpidemicRouter):
             peer_id = getattr(contact, "peer_id", None)
             if peer_id and peer_id == getattr(bundle, "destination", None):
                 # Transfer custody
-                self.copy_table[bundle.id] = 0
+                if bundle.id is not None:
+                    self.copy_table[bundle.id] = 0
                 return [peer_id]
         return []
 

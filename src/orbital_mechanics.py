@@ -22,8 +22,8 @@ import math
 from typing import Tuple, List
 from dataclasses import dataclass
 import time
-from skyfield.api import load
-from skyfield.sgp4lib import EarthSatellite
+from skyfield.api import load  # type: ignore[import-untyped]
+from skyfield.sgp4lib import EarthSatellite  # type: ignore[import-untyped]
 
 
 @dataclass

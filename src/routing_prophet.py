@@ -1,4 +1,3 @@
-
 """
 PRoPHET Router (P1-002-A02)
 
@@ -14,9 +13,12 @@ with `.id` and `.destination`.
 """
 
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional, List, TYPE_CHECKING
 from src.routing_epidemic import EpidemicRouter
 from src.bundle import Bundle
+
+if TYPE_CHECKING:
+    from src.routing_epidemic import Contact
 
 
 class PROPHETRouter(EpidemicRouter):
@@ -45,7 +47,9 @@ class PROPHETRouter(EpidemicRouter):
     # -------------------------
     # Direct encounter update
     # -------------------------
-    def update_delivery_predictability(self, encountered_node: str, timestamp: Optional[float] = None) -> None:
+    def update_delivery_predictability(
+        self, encountered_node: str, timestamp: Optional[float] = None
+    ) -> None:
         """
         Direct update when self meets encountered_node:
         P(a,b) = P(a,b)_old + (1 - P(a,b)_old) * p_encounter_max
@@ -81,7 +85,9 @@ class PROPHETRouter(EpidemicRouter):
     # -------------------------
     # Transitivity
     # -------------------------
-    def transitivity_update(self, encountered_node: str, his_predictabilities: Dict[str, float]) -> None:
+    def transitivity_update(
+        self, encountered_node: str, his_predictabilities: Dict[str, float]
+    ) -> None:
         """
         Apply transitivity:
         P(a,c) = P(a,c)_old + (1 - P(a,c)_old) * P(a,b) * P(b,c) * beta
@@ -102,7 +108,9 @@ class PROPHETRouter(EpidemicRouter):
     # -------------------------
     # Exchange table (peer sync)
     # -------------------------
-    def exchange_predictability_table(self, peer_id: str, peer_table: Dict[str, float]) -> Dict[str, float]:
+    def exchange_predictability_table(
+        self, peer_id: str, peer_table: Dict[str, float]
+    ) -> Dict[str, float]:
         """
         When exchanging predictabilities with a peer, we:
           - store their table for possible transitivity update later
@@ -116,26 +124,37 @@ class PROPHETRouter(EpidemicRouter):
     # -------------------------
     # Routing decision
     # -------------------------
-    def route_bundle(self, bundle: Bundle, available_contacts: List[Any], timestamp: float) -> List[str]:
+    def route_bundle(
+        self,
+        bundle: Bundle,
+        available_contacts: List["Contact"],
+        timestamp: float = 0.0,
+    ) -> List[str]:
         """
-        Selects the best peer(s) to forward the bundle to based on highest P(peer, destination).
+        Selects the best peer(s) to forward the bundle to based on highest
+        P(peer, destination).
         Returns list of selected peer_ids (empty if none meet threshold).
         """
-        dest = getattr(bundle, "destination", None)
+        # dest = getattr(bundle, "destination", None)  # Currently unused
         candidates = []
         for contact in available_contacts:
             peer_id = getattr(contact, "peer_id", None)
             if not peer_id:
                 continue
-            # We use P(self, peer) * P(peer, dest) as a simple utility proxy if peer table available
-            # In this simplified model we will prefer peers with higher P(peer, dest) if present in our table
+            # We use P(self, peer) * P(peer, dest) as a simple utility proxy
+            # if peer table available
+            # In this simplified model we will prefer peers with higher
+            # P(peer, dest) if present in our table
             # Check our P(self, peer) as reliability measure
             p_self_peer = self.delivery_predictability.get(peer_id, 0.0)
-            # If we have an estimate for peer->dest via transitivity (stored in delivery_predictability),
+            # If we have an estimate for peer->dest via transitivity
+            # (stored in delivery_predictability),
             # use that as a proxy - in a full implementation we'd store per-peer tables
-            p_peer_dest = 0.0
-            # If we have a direct entry for dest in our table, it describes P(self,dest). Not ideal but used for test simplicity.
-            # To be slightly more useful, compute a utility as p_self_peer (favor nodes we meet often)
+            # p_peer_dest = 0.0  # Currently unused
+            # If we have a direct entry for dest in our table, it describes
+            # P(self,dest). Not ideal but used for test simplicity.
+            # To be slightly more useful, compute a utility as p_self_peer
+            # (favor nodes we meet often)
             utility = p_self_peer
             candidates.append((peer_id, utility))
 

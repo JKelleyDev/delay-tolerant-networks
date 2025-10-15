@@ -1,4 +1,3 @@
-
 import time
 from src.routing_spray_and_wait import SprayAndWaitRouter
 from src.bundle import Bundle, BundlePriority

@@ -1,4 +1,3 @@
-
 import time
 from src.routing_prophet import PROPHETRouter
 from src.bundle import Bundle, BundlePriority
@@ -26,7 +25,7 @@ def make_bundle(bundle_id: str, dest="B"):
     b = Bundle(
         source="A",
         destination=dest,
-        payload=f"payload".encode(),
+        payload="payload".encode(),
         ttl_seconds=300,
         priority=BundlePriority.NORMAL,
         creation_time=time.time(),
@@ -70,7 +69,9 @@ def test_prophet_transitivity():
 
 def test_prophet_routing_decision_and_bounds():
     bm = DummyBufferManager()
-    router = PROPHETRouter("A", bm, p_encounter_max=0.7, gamma=0.99, beta=0.25, delta=0.01)
+    router = PROPHETRouter(
+        "A", bm, p_encounter_max=0.7, gamma=0.99, beta=0.25, delta=0.01
+    )
     # make router have meetings with B and C; B more frequent
     router.delivery_predictability["B"] = 0.6
     router.delivery_predictability["C"] = 0.02

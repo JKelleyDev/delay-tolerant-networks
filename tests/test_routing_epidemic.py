@@ -85,4 +85,3 @@ def test_transmission_priority():
     p2 = router.calculate_transmission_priority(b2)
 
     assert p1 > p2
-
