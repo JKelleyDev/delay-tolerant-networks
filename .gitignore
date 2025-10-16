@@ -43,3 +43,9 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Visual Studio files
+.vs/
+*.pdb
+*.db
+.env

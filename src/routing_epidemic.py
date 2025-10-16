@@ -1,120 +1,67 @@
-﻿import time
-from typing import List, Dict, Set, Any
+from typing import Dict, List, Set, Any
 from src.bundle import Bundle
 
 
 class EpidemicRouter:
     """
-    Implements the foundational Epidemic Routing algorithm for DTN networks.
-
-    Features:
-    - Flooding-based bundle dissemination.
-    - Duplicate suppression via summary vectors.
-    - Anti-entropy synchronization.
-    - TTL and priority-aware transmission ordering.
+    Basic Epidemic Routing implementation.
+    Floods bundles to all available contacts with duplicate suppression
+    and simple summary vector (anti-entropy) exchange.
     """
 
     def __init__(self, node_id: str, buffer_manager):
         self.node_id = node_id
         self.buffer_manager = buffer_manager
-        self.known_bundles: Set[str] = set()  # for duplicate suppression
-        self.neighbor_summaries: Dict[str, Dict[str, Any]] = {}
+        self.seen_bundles: Set[str] = set()
+        self.routing_table: Dict[str, List[Bundle]] = {}
 
-    # ----------------------------------------------------------------------
-    # ROUTE BUNDLE (Flooding)
-    # ----------------------------------------------------------------------
-    def route_bundle(self, bundle: Bundle, contacts: List, timestamp: float):
-        """
-        Flood a bundle to all available contacts unless duplicate suppression applies.
-        Returns list of peer_ids the bundle was sent to.
-        """
-        sent_to: List[str] = []
-        if bundle.id in self.known_bundles:
-            # Already sent/received before
-            return sent_to
-
-        # Mark as known
-        if bundle.id is not None:
-            self.known_bundles.add(bundle.id)
-
-        for contact in contacts:
-            # Check contact window and link quality before sending
-            if self._can_transmit(contact, bundle, timestamp):
-                sent_to.append(contact.peer_id)
-
-        return sent_to
-
-    # ----------------------------------------------------------------------
-    # ANTI-ENTROPY (Summary Vector Exchange)
-    # ----------------------------------------------------------------------
-    def exchange_summary_vector(self, peer_id: str, contact):
-        """
-        Perform anti-entropy synchronization between nodes.
-        Includes all locally buffered bundles, even if not yet routed.
-        Returns a summary vector describing this node's known bundles.
-        """
-        # Collect all bundle IDs from both buffer manager and known_bundles
-        all_known_ids = set(self.known_bundles)
-
-        # Include all stored bundle IDs from buffer manager
-        if hasattr(self.buffer_manager, "get_all_bundles"):
-            try:
-                for bundle in self.buffer_manager.get_all_bundles():
-                    all_known_ids.add(bundle.id)
-            except Exception:
-                pass  # If buffer manager isn't ready, skip safely
-
-        summary_vector = {
-            "node_id": self.node_id,
-            "timestamp": time.time(),
-            "owned_bundles": list(all_known_ids),
-        }
-
-        self.neighbor_summaries[peer_id] = summary_vector
-        return summary_vector
-
-    # ----------------------------------------------------------------------
-    # DUPLICATE SUPPRESSION / FLOODING CONTROL
-    # ----------------------------------------------------------------------
-    def has_seen_bundle(self, bundle_id: str) -> bool:
-        """Check if bundle was previously received or forwarded."""
-        return bundle_id in self.known_bundles
-
-    # ----------------------------------------------------------------------
-    # TRANSMISSION PRIORITY CALCULATION
-    # ----------------------------------------------------------------------
-    def calculate_transmission_priority(
-        self, bundles: List[Bundle], contact_duration: float
+    def route_bundle(
+        self, bundle: Bundle, contacts: List["Contact"], timestamp: float = 0.0
     ):
-        """
-        Order bundles for transmission based on:
-        - Priority (CRITICAL > HIGH > NORMAL > LOW)
-        - TTL (lower TTL → higher urgency)
-        - Creation time (older first, tie-breaker)
-        """
-        now = time.time()
+        """Flood the bundle to all available contacts except duplicates."""
+        if bundle.id is None:
+            return []
+        if bundle.id in self.seen_bundles:
+            return []
 
-        def bundle_sort_key(b: Bundle):
-            remaining_ttl = b.remaining_ttl()
-            # Lower TTL = higher urgency, so inverse TTL
-            return (
-                -b.priority.value,  # higher priority first
-                remaining_ttl,  # smaller remaining TTL first
-                b.creation_time or now,
-            )
+        self.seen_bundles.add(bundle.id)
+        sent = []
+        for contact in contacts:
+            if self._contact_available(contact):
+                self._send_bundle(bundle, contact)
+                sent.append(contact.peer_id)
+        return sent
 
-        ordered = sorted(bundles, key=bundle_sort_key)
-        return ordered
+    def exchange_summary_vector(
+        self, peer_id: str, contact: "Contact"
+    ) -> Dict[str, Any]:
+        """
+        Simulate anti-entropy summary vector exchange.
+        Returns local summary vector for testing.
+        """
+        owned = [b.id for b in self.buffer_manager.bundles if b.id is not None]
+        return {"node_id": self.node_id, "owned_bundles": owned}
 
-    # ----------------------------------------------------------------------
-    # CONTACT WINDOW / QUALITY CHECK (stub for later)
-    # ----------------------------------------------------------------------
-    def _can_transmit(self, contact, bundle, timestamp: float) -> bool:
-        """
-        Determine if we can transmit over a contact window.
-        For now: always allow, later integrate link quality + duration.
-        """
-        if bundle.is_expired():
-            return False
-        # Could add rate-limiting or capacity control here
-        return True
+    def calculate_transmission_priority(self, bundle: Bundle) -> int:
+        """Prioritize bundles based on TTL and priority level."""
+        ttl = bundle.remaining_ttl()
+        base_priority = bundle.priority.value
+        return base_priority * 1000 + ttl
+
+    def _send_bundle(self, bundle: Bundle, contact: "Contact"):
+        """Placeholder for sending logic."""
+        contact.receive_bundle(bundle)
+
+    def _contact_available(self, contact: "Contact") -> bool:
+        """Simulate contact availability."""
+        return hasattr(contact, "peer_id")
+
+
+# Dummy Contact for testing
+class Contact:
+    def __init__(self, peer_id: str):
+        self.peer_id = peer_id
+        self.received: List[Bundle] = []
+
+    def receive_bundle(self, bundle: Bundle):
+        self.received.append(bundle)
