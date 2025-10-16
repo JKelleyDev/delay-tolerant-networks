@@ -307,7 +307,7 @@ if __name__ == "__main__":
 
     # Run: python orbital_mechanics.py api
     if len(sys.argv) > 1 and sys.argv[1].lower() == "api":
-        from flask_cors import CORS
+        from flask_cors import CORS  # type: ignore[import-untyped]
 
         app = Flask(__name__)
         CORS(app)
