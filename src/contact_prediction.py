@@ -16,6 +16,7 @@ Dependencies:
 - numpy: pip install numpy
 - src.orbital_mechanics: Local orbital mechanics module
 """
+from datetime import datetime, UTC
 from astropy import units as u
 from astropy import coordinates as coord
 from astropy.time import Time
@@ -30,7 +31,6 @@ from src.orbital_mechanics import (
     OrbitalMechanics,
     Velocity3D,
 )
-
 
 @dataclass
 class GroundStation:
@@ -163,16 +163,34 @@ class ContactPredictor:
         south, east, zenith = R.dot(d)
 
         #calculate elevation and azimuth angles
-        range_sez = np.sqrt(south**2 + east**2 + zenith**2) #account for change in perspective
         elevation = np.arctan2(zenith, np.sqrt(south**2 + east**2))
         azimuth = np.arctan2(east, -south)
         #make sure azimuth is within [0,360)
         azimuth = azimuth % (2 * np.pi)
         return np.rad2deg(elevation), np.rad2deg(azimuth)
 
+    def satellite_eci_to_ecef(
+            self,
+            satellite_position: Position3D,
+            timestamp: Time,
+    ) -> Position3D:
+        """
+        Helper function to convert satellite ECI to ECEF
+        Args:
+            satellite_position: Satellite position in ECI coordinates
+            timestamp: Astropy time object for coordinate conversion
 
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement elevation/azimuth calculation")
+        Returns:
+            Position3D: Satellite position using ECEF coordinates
+        """
+        # satellite ECI to ECEF, utilizes GCRS ECI frame
+        cartrep = coord.CartesianRepresentation(x=satellite_position.x, y=satellite_position.y, z=satellite_position.z,
+                                                unit=u.m)
+        gcrs = coord.GCRS(cartrep, obstime=timestamp)
+        itrs = gcrs.transform_to(coord.ICRS(obstime=timestamp))  # convert to ECEF frame
+        loc = coord.EarthLocation(*itrs.cartesian.cartrep)
+
+        return Position3D(loc.lat, loc.lon, loc.height, coordinate_system="ECEF")
 
     def calculate_range(
         self,
@@ -193,19 +211,12 @@ class ContactPredictor:
 
         Calculate Euclidean distance between satellite and ground station
         """
-        # satellite ECI to ECEF, utilizes GCRS ECI frame
-        cartrep = coord.CartesianRepresentation(x=satellite_position.x, y=satellite_position.y, z=satellite_position.z,
-                                                unit=u.m)
-        gcrs = coord.GCRS(cartrep, obstime=timestamp)
-        itrs = gcrs.transform_to(coord.ICRS(obstime=timestamp))  # convert to ECEF frame
-        loc = coord.EarthLocation(*itrs.cartesian.cartrep)
-
-        satellite_coordinates = Position3D(loc.lat, loc.lon, loc.height, coordinate_system="ECEF")
+        satellite_coordinates = self.satellite_eci_to_ecef(satellite_position, timestamp)
 
         # ground station geodetic to ECEF
         ground_station_coordinates = ground_station.to_ecef_position()
 
-        # calculate euclidian distance
+        # calculate euclidian distance (magnitude of range vector
         x_dist = (satellite_coordinates.x - ground_station_coordinates.x) ** 2
         y_dist = (satellite_coordinates.y - ground_station_coordinates.y) ** 2
         z_dist = (satellite_coordinates.z - ground_station_coordinates.z) ** 2
@@ -215,7 +226,7 @@ class ContactPredictor:
         self,
         satellite_position: Position3D,
         ground_station: GroundStation,
-        timestamp: float,
+        timestamp: Time,
     ) -> bool:
         """
         Check if satellite is visible from ground station
@@ -228,18 +239,19 @@ class ContactPredictor:
         Returns:
             True if satellite is above minimum elevation
 
-        TODO: Implement visibility check
         Use elevation angle calculation and compare with minimum elevation
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement visibility check")
+        #get elevation and azimuth
+        elevation, azimuth = self.calculate_elevation_azimuth(satellite_position, ground_station, timestamp)
+
+        return elevation > ground_station.min_elevation_deg
 
     def calculate_contact_quality(
         self,
         satellite_position: Position3D,
         satellite_velocity: Velocity3D,
         ground_station: GroundStation,
-        timestamp: float,
+        timestamp: Time,
     ) -> ContactQuality:
         """
         Calculate detailed contact quality metrics
@@ -253,11 +265,52 @@ class ContactPredictor:
         Returns:
             ContactQuality with all metrics
 
-        TODO: Implement contact quality calculation
         Include elevation, azimuth, range, data rate, signal strength, Doppler
         """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement contact quality calculation")
+        # get elevation and azimuth
+        elevation, azimuth = self.calculate_elevation_azimuth(satellite_position, ground_station, timestamp)
+
+        # get magnitude of range vector
+        range = self.calculate_range(satellite_position, ground_station, timestamp)
+
+        # calculate doppler - first get satellite and ground station in ECEF coordinates
+        satellite_coordinates = self.satellite_eci_to_ecef(satellite_position, timestamp)
+        ground_station_coordinates = ground_station.to_ecef_position()
+
+        """
+
+        # compute observer ground station velocity
+        omega_vec = np.array([0.0, 0.0, omega_earth])
+        v_obs_ecef = np.cross(omega_vec, np.array(r_obs_ecef))
+
+        # relative position and velocity (from observer to satellite)
+        rel_r = r_sat_ecef - np.array(r_obs_ecef)
+        rel_v = v_sat_ecef - np.array(v_obs_ecef)
+
+        rho = np.linalg.norm(rel_r)
+        if rho == 0:
+            raise ValueError("Observer and satellite positions coincide (rho == 0).")
+        u_los = rel_r / rho
+
+        # radial velocity: projection of relative velocity on LOS
+        v_radial = np.dot(rel_v,
+                          u_los)  # positive => satellite moving away along LOS of observer? (we'll set convention below)
+        # Convention: this dot product yields positive when rel_v has component in same direction as LOS:
+        #   LOS points from observer -> satellite.
+        #   if v_radial > 0, satellite moving away from observer along LOS (increasing range).
+        # Many references want positive v for closing (approaching). To get that convention, flip sign:
+        # For user-friendly convention (positive -> approaching), set:
+        v_radial_approach = -v_radial
+
+        # Doppler: f_d = (v_radial_approach / c) * f0  (positive -> frequency increase when approaching)
+        doppler_hz = (v_radial_approach / c) * carrier_freq_hz
+        """
+
+
+        #TODO:Unsure currently how to calculate data rate and signal strength, currently returns 0
+        return ContactQuality(elevation, azimuth, range, 0, 0, )
+
+
 
     def predict_contact_windows(
         self,
@@ -282,7 +335,6 @@ class ContactPredictor:
         Returns:
             List of ContactWindow objects
 
-        TODO: Implement contact window prediction
         Steps:
         1. Loop through time with specified time step
         2. Propagate satellite orbit at each time step
@@ -291,6 +343,69 @@ class ContactPredictor:
         5. Calculate contact quality metrics
         6. Create ContactWindow objects
         """
+        contact_windows = List[ContactWindow]
+        time_step = start_time
+        MU_EARTH = OrbitalMechanics.EARTH_MU * 1e9 #convert to meters
+
+        #define initial satellite values in meters/radians
+        a = satellite_elements.semi_major_axis * 1e3
+        e = satellite_elements.eccentricity
+        i = np.radians(satellite_elements.inclination)
+        raan = np.radians(satellite_elements.raan)
+        argp = np.radians(satellite_elements.arg_perigee)
+        nu0 = np.radians(satellite_elements.true_anomaly)
+        # Mean motion
+        n = np.sqrt(MU_EARTH / a ** 3)
+
+        # loop through each time step
+        while time_step <= start_time + (duration_hours * 3600):
+            #convert UNIX time to astropy Time
+            date = datetime.fromtimestamp(time_step, UTC)
+            astro_time = Time(date)
+
+
+            #propogate satellite orbit
+            # Initial eccentric anomaly
+            E0 = 2 * np.arctan(np.tan(nu0 / 2) * np.sqrt((1 - e) / (1 + e)))
+            M0 = E0 - e * np.sin(E0)
+            M = M0 + n * dt
+
+            # Solve Kepler’s equation
+            E = M
+            for _ in range(15):
+                E = M + e * np.sin(E)
+
+            # True anomaly and distance
+            nu = 2 * np.arctan2(np.sqrt(1 + e) * np.sin(E / 2),
+                                np.sqrt(1 - e) * np.cos(E / 2))
+            r_mag = a * (1 - e * np.cos(E))
+
+            # Perifocal frame position/velocity
+            r_pf = np.array([r_mag * np.cos(nu), r_mag * np.sin(nu), 0])
+            v_pf = np.sqrt(MU_EARTH / a) / (1 - e * np.cos(E)) * np.array(
+                [-np.sin(E), np.sqrt(1 - e ** 2) * np.cos(E), 0])
+
+            # Rotation matrix perifocal→ECI
+            cosO, sinO = np.cos(raan), np.sin(raan)
+            cosi, sini = np.cos(i), np.sin(i)
+            cosw, sinw = np.cos(argp), np.sin(argp)
+
+            R = np.array([
+                [cosO * cosw - sinO * sinw * cosi, -cosO * sinw - sinO * cosw * cosi, sinO * sini],
+                [sinO * cosw + cosO * sinw * cosi, -sinO * sinw + cosO * cosw * cosi, -cosO * sini],
+                [sinw * sini, cosw * sini, cosi]
+            ])
+
+            r_eci = R @ r_pf
+            v_eci = R @ v_pf
+
+            satellite_position_eci = Position3D(r_eci[0], r_eci[1], r_eci[2], coordinate_system="ECI")
+
+            #check visibility
+            visible = self.is_visible(a, PRESET_GROUND_STATIONS[ground_station_name], astro_time)
+
+
+
         # TODO: Implement this function
         raise NotImplementedError("Pair 2: Implement contact window prediction")
 
@@ -439,10 +554,14 @@ PRESET_GROUND_STATIONS = {
         max_data_rate_mbps=80,
     ),
 }
-
+if __name__ == "__main__":
+    unix_timestamp = 1678886400  # March 15, 2023, 00:00:00 UTC
+    local_datetime_object = datetime.fromtimestamp(unix_timestamp, UTC)
+    t = Time(local_datetime_object)
+    print(f"Local datetime: {t}  {local_datetime_object}")
 
 # Example usage and test cases
-if __name__ == "__main__":
+if __name__ == "__min__":
     """
     Example usage for testing implementations
     Run this after implementing the TODO functions
