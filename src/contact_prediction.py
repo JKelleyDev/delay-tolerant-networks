@@ -17,7 +17,7 @@ Dependencies:
 - src.orbital_mechanics: Local orbital mechanics module
 """
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from astropy import units as u  # type: ignore
 from astropy import coordinates as coord  # type: ignore
 from astropy.time import Time  # type: ignore
@@ -786,7 +786,7 @@ PRESET_GROUND_STATIONS = {
 }
 if __name__ == "__main__":
     unix_timestamp = 1678886400  # March 15, 2023, 00:00:00 UTC
-    local_datetime_object = datetime.fromtimestamp(unix_timestamp, UTC)
+    local_datetime_object = datetime.fromtimestamp(unix_timestamp, timezone.utc)
     t = Time(local_datetime_object)
     print(f"Local datetime: {t}  {local_datetime_object}")
 
