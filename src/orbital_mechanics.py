@@ -24,7 +24,6 @@ from dataclasses import dataclass
 import time
 from skyfield.api import load  # type: ignore[import-untyped]
 from skyfield.sgp4lib import EarthSatellite  # type: ignore[import-untyped]
-from flask import Flask, jsonify
 
 
 @dataclass
@@ -307,6 +306,7 @@ if __name__ == "__main__":
 
     # Run: python orbital_mechanics.py api
     if len(sys.argv) > 1 and sys.argv[1].lower() == "api":
+        from flask import Flask, jsonify  # type: ignore[import-untyped]
         from flask_cors import CORS  # type: ignore[import-untyped]
 
         app = Flask(__name__)

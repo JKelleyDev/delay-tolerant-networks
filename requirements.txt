@@ -10,6 +10,10 @@ black>=23.0.0
 flake8>=6.0.0
 mypy>=1.0.0
 
+# Optional: For API functionality
+flask>=2.0.0
+flask-cors>=4.0.0
+
 # Optional: For future networking features
 # requests>=2.28.0
 # asyncio>=3.4.3
