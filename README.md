@@ -27,14 +27,18 @@ We chose satellite communication over terrestrial (BLE/Wi-Fi Direct) to showcase
 git clone https://github.com/JKelleyDev/delay-tolerant-networks.git
 cd delay-tolerant-networks
 
-# Install dependencies
-make install
+# Install backend dependencies
+cd backend && pip install -r requirements.txt && cd ..
 
-# Run all quality checks (recommended before committing)
-make all
+# Install frontend dependencies  
+cd frontend && npm install && cd ..
 
-# Run tests only
-make test
+# Start development environment (both frontend + backend)
+./scripts/start-dev.sh
+
+# Or run individually:
+# Backend API: cd backend && python -m dtn.api.server
+# Frontend:    cd frontend && npm run dev
 ```
 
 ## 🏗️ Project Architecture

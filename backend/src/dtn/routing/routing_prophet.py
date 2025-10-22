@@ -14,11 +14,8 @@ with `.id` and `.destination`.
 
 import time
 from typing import Dict, Optional, List, TYPE_CHECKING
-from src.routing_epidemic import EpidemicRouter
-from src.bundle import Bundle
-
-if TYPE_CHECKING:
-    from src.routing_epidemic import Contact
+from .routing_epidemic import EpidemicRouter
+from ..core.bundle import Bundle, Contact, BufferManager
 
 
 class PROPHETRouter(EpidemicRouter):
