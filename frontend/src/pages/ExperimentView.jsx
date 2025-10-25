@@ -6,6 +6,7 @@ const ExperimentView = () => {
   const [experiments, setExperiments] = useState([])
   const [constellations, setConstellations] = useState({})
   const [groundStations, setGroundStations] = useState({})
+  const [rfBands, setRfBands] = useState({})
   const [loading, setLoading] = useState(false)
   const [runningExperiments, setRunningExperiments] = useState(new Set())
   const [selectedExperiment, setSelectedExperiment] = useState(null)
@@ -19,13 +20,15 @@ const ExperimentView = () => {
     duration: 24,
     bundle_rate: 1.0,
     buffer_size: 10485760, // 10MB
-    ground_stations: ['gs_los_angeles', 'gs_tokyo']
+    ground_stations: ['gs_los_angeles', 'gs_tokyo'],
+    rf_band: 'ka-band' // Default to Ka-band (modern broadband)
   })
 
   useEffect(() => {
     fetchExperiments()
     fetchConstellations()
     fetchGroundStations()
+    fetchRfBands()
   }, [])
 
   const fetchExperiments = async () => {
@@ -64,6 +67,18 @@ const ExperimentView = () => {
     }
   }
 
+  const fetchRfBands = async () => {
+    try {
+      const response = await fetch('/api/v2/rf_bands/library')
+      const data = await response.json()
+      if (data.success) {
+        setRfBands(data.data.rf_bands || {})
+      }
+    } catch (err) {
+      console.error('Failed to fetch RF bands:', err)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -88,7 +103,8 @@ const ExperimentView = () => {
           duration: 24,
           bundle_rate: 1.0,
           buffer_size: 10485760,
-          ground_stations: ['gs_los_angeles', 'gs_tokyo']
+          ground_stations: ['gs_los_angeles', 'gs_tokyo'],
+          rf_band: 'ka-band'
         })
         await fetchExperiments()
       }
@@ -185,24 +201,44 @@ const ExperimentView = () => {
   const generateResultsCSV = (results) => {
     const headers = [
       'Algorithm',
+      // Network Layer
       'Delivery Ratio (%)',
       'Average Delay (minutes)', 
       'Network Overhead',
-      'Average Hop Count',
+      'Routing Efficiency',
       'Total Bundles',
       'Bundles Delivered',
-      'Throughput (bundles/hour)'
+      // Physical Layer
+      'RF Throughput (Mbps)',
+      'Average SNR (dB)',
+      'Average Data Rate (Mbps)',
+      'Link Availability (%)',
+      'Link Margin (dB)',
+      'Data Transmitted (MB)',
+      'RF Limited Contacts',
+      // Cross-Layer
+      'Cross-Layer Performance Score'
     ]
     
     const rows = Object.entries(results).map(([algorithm, data]) => [
       algorithm,
+      // Network Layer
       (data.delivery_ratio * 100).toFixed(1),
       (data.average_delay_seconds / 60).toFixed(1),
       data.network_overhead_ratio.toFixed(2),
-      data.average_hop_count.toFixed(1),
+      data.network_layer_routing_efficiency ? data.network_layer_routing_efficiency.toFixed(3) : 'N/A',
       data.total_bundles_generated,
       data.bundles_delivered,
-      data.throughput_bundles_per_hour.toFixed(1)
+      // Physical Layer
+      data.rf_throughput_mbps ? data.rf_throughput_mbps.toFixed(2) : '0.00',
+      data.average_snr_db ? data.average_snr_db.toFixed(1) : '0.0',
+      data.average_data_rate_mbps ? data.average_data_rate_mbps.toFixed(1) : '0.0',
+      data.rf_link_availability_percent ? data.rf_link_availability_percent.toFixed(1) : '0.0',
+      data.average_link_margin_db ? data.average_link_margin_db.toFixed(1) : '0.0',
+      data.total_data_transmitted_mb ? data.total_data_transmitted_mb.toFixed(1) : '0.0',
+      data.rf_limited_contacts || 0,
+      // Cross-Layer
+      data.cross_layer_performance_score ? data.cross_layer_performance_score.toFixed(3) : '0.000'
     ])
     
     return [headers, ...rows].map(row => row.join(',')).join('\n')
@@ -292,6 +328,52 @@ const ExperimentView = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="form-label">RF Frequency Band</label>
+                <div className="mb-2 text-xs text-blue-300">
+                  Choose the satellite communication frequency band for realistic RF analysis
+                </div>
+                <select
+                  value={formData.rf_band}
+                  onChange={(e) => setFormData({...formData, rf_band: e.target.value})}
+                  className="form-input w-full"
+                >
+                  {Object.entries(rfBands).map(([key, band]) => (
+                    <option key={key} value={key}>
+                      {band.name} ({band.frequency_ghz.toFixed(1)} GHz, {band.bandwidth_mhz.toFixed(0)} MHz)
+                    </option>
+                  ))}
+                </select>
+                
+                {formData.rf_band && rfBands[formData.rf_band] && (
+                  <div className="mt-2 text-xs bg-gray-800 p-2 rounded">
+                    <div className="text-gray-300 mb-1">RF Specifications:</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-gray-400">Frequency:</span>
+                        <span className="text-white ml-1">{rfBands[formData.rf_band].frequency_ghz.toFixed(1)} GHz</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Bandwidth:</span>
+                        <span className="text-white ml-1">{rfBands[formData.rf_band].bandwidth_mhz.toFixed(0)} MHz</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">TX Power:</span>
+                        <span className="text-white ml-1">{rfBands[formData.rf_band].tx_power_watts.toFixed(0)}W</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Required SNR:</span>
+                        <span className="text-white ml-1">{rfBands[formData.rf_band].required_snr_db.toFixed(0)} dB</span>
+                      </div>
+                    </div>
+                    <div className="mt-1">
+                      <span className="text-gray-400">Applications:</span>
+                      <span className="text-green-300 ml-1">{rfBands[formData.rf_band].typical_applications?.join(', ')}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -563,10 +645,18 @@ const ExperimentView = () => {
               <div className="bg-gray-800 p-4 rounded-lg">
                 <h3 className="text-lg font-semibold text-white mb-2">{experimentResults.experiment.name}</h3>
                 <p className="text-gray-400 text-sm">{experimentResults.experiment.description}</p>
-                <div className="grid grid-cols-3 gap-4 mt-3 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-sm">
                   <div>
                     <span className="text-gray-400">Constellation:</span>
                     <div className="text-white">{experimentResults.experiment.constellation}</div>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">RF Band:</span>
+                    <div className="text-white">
+                      {experimentResults.experiment.rf_band ? 
+                        rfBands[experimentResults.experiment.rf_band]?.name || experimentResults.experiment.rf_band 
+                        : 'Ka-band'}
+                    </div>
                   </div>
                   <div>
                     <span className="text-gray-400">Duration:</span>
@@ -577,6 +667,18 @@ const ExperimentView = () => {
                     <div className="text-white">{experimentResults.experiment.bundle_rate} bundles/sec</div>
                   </div>
                 </div>
+                
+                {/* RF Band Details */}
+                {experimentResults.experiment.rf_band && rfBands[experimentResults.experiment.rf_band] && (
+                  <div className="mt-3 p-2 bg-gray-700 rounded text-xs">
+                    <span className="text-blue-300">📡 RF Specifications: </span>
+                    <span className="text-gray-300">
+                      {rfBands[experimentResults.experiment.rf_band].frequency_ghz.toFixed(1)} GHz, 
+                      {rfBands[experimentResults.experiment.rf_band].bandwidth_mhz.toFixed(0)} MHz bandwidth, 
+                      {rfBands[experimentResults.experiment.rf_band].tx_power_watts.toFixed(0)}W TX power
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Results Comparison */}
@@ -587,54 +689,111 @@ const ExperimentView = () => {
                       {algorithm.replace('_', ' ')} Routing
                     </h4>
                     
-                    <div className="space-y-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Delivery Ratio:</span>
-                        <span className="text-white font-medium">
-                          {(data.delivery_ratio * 100).toFixed(1)}%
-                        </span>
+                    {/* Network Layer Performance */}
+                    <div className="mb-4">
+                      <h5 className="text-sm font-medium text-gray-300 mb-2 border-b border-gray-600 pb-1">
+                        🌐 Network Layer (DTN Routing)
+                      </h5>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Delivery Ratio:</span>
+                          <span className="text-white font-medium">
+                            {(data.delivery_ratio * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Avg Delay:</span>
+                          <span className="text-white">
+                            {(data.average_delay_seconds / 60).toFixed(1)} min
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Network Overhead:</span>
+                          <span className="text-white">
+                            {data.network_overhead_ratio.toFixed(1)}x
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Routing Efficiency:</span>
+                          <span className="text-white">
+                            {data.network_layer_routing_efficiency ? data.network_layer_routing_efficiency.toFixed(3) : 'N/A'}
+                          </span>
+                        </div>
                       </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Avg Delay:</span>
-                        <span className="text-white">
-                          {(data.average_delay_seconds / 60).toFixed(1)} min
-                        </span>
+                    </div>
+
+                    {/* Physical Layer Performance */}
+                    <div className="mb-4">
+                      <h5 className="text-sm font-medium text-gray-300 mb-2 border-b border-gray-600 pb-1">
+                        📡 Physical Layer (RF Performance)
+                      </h5>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">RF Throughput:</span>
+                          <span className="text-white font-medium">
+                            {data.rf_throughput_mbps ? data.rf_throughput_mbps.toFixed(2) : '0.00'} Mbps
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Average SNR:</span>
+                          <span className="text-white">
+                            {data.average_snr_db ? data.average_snr_db.toFixed(1) : '0.0'} dB
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Data Rate:</span>
+                          <span className="text-white">
+                            {data.average_data_rate_mbps ? data.average_data_rate_mbps.toFixed(1) : '0.0'} Mbps
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Link Availability:</span>
+                          <span className="text-white">
+                            {data.rf_link_availability_percent ? data.rf_link_availability_percent.toFixed(1) : '0.0'}%
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Link Margin:</span>
+                          <span className="text-white">
+                            {data.average_link_margin_db ? data.average_link_margin_db.toFixed(1) : '0.0'} dB
+                          </span>
+                        </div>
                       </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Network Overhead:</span>
-                        <span className="text-white">
-                          {data.network_overhead_ratio.toFixed(1)}x
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Hop Count:</span>
-                        <span className="text-white">
-                          {data.average_hop_count.toFixed(1)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Bundles Generated:</span>
-                        <span className="text-white">
-                          {data.total_bundles_generated.toLocaleString()}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Bundles Delivered:</span>
-                        <span className="text-white">
-                          {data.bundles_delivered.toLocaleString()}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Throughput:</span>
-                        <span className="text-white">
-                          {data.throughput_bundles_per_hour.toFixed(1)} bundles/hr
-                        </span>
+                    </div>
+
+                    {/* Cross-Layer Analysis */}
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-300 mb-2 border-b border-gray-600 pb-1">
+                        🔗 Cross-Layer Integration
+                      </h5>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Data Transmitted:</span>
+                          <span className="text-white">
+                            {data.total_data_transmitted_mb ? data.total_data_transmitted_mb.toFixed(1) : '0.0'} MB
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">RF Limited Contacts:</span>
+                          <span className="text-white">
+                            {data.rf_limited_contacts || 0}
+                          </span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Performance Score:</span>
+                          <span className="text-white font-medium">
+                            {data.cross_layer_performance_score ? data.cross_layer_performance_score.toFixed(3) : '0.000'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

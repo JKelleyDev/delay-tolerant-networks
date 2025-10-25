@@ -54,41 +54,174 @@ class GroundStation:
 @dataclass
 class LinkBudget:
     """RF link budget parameters."""
-    frequency: float = 2.4e9  # Hz (S-band)
+    frequency: float = 2.4e9  # Hz (default S-band)
     tx_power: float = 10.0  # Watts
     tx_gain: float = 20.0  # dBi
     rx_gain: float = 20.0  # dBi
     noise_temp: float = 300.0  # Kelvin
     bandwidth: float = 10e6  # Hz
     required_snr: float = 10.0  # dB
+    band_name: str = "S-band"  # Human-readable band name
+    
+    @classmethod
+    def create_preset(cls, band_type: str = "s-band"):
+        """Create RF parameters for common satellite bands."""
+        presets = {
+            "l-band": cls(
+                frequency=1.575e9,     # GPS L1 frequency
+                tx_power=50.0,         # 50W for L-band
+                tx_gain=12.0,          # Lower gain, wider beam
+                rx_gain=35.0,          # Ground station L-band antenna
+                noise_temp=180.0,      # Good L-band LNA
+                bandwidth=20e6,        # 20 MHz bandwidth
+                required_snr=6.0,      # Lower SNR requirement
+                band_name="L-band"
+            ),
+            "s-band": cls(
+                frequency=2.4e9,       # S-band ISM
+                tx_power=20.0,         # 20W typical
+                tx_gain=18.0,          # Medium gain
+                rx_gain=40.0,          # S-band ground antenna
+                noise_temp=150.0,      # S-band system noise
+                bandwidth=10e6,        # 10 MHz bandwidth
+                required_snr=8.0,      # Standard requirement
+                band_name="S-band"
+            ),
+            "c-band": cls(
+                frequency=6.0e9,       # C-band uplink
+                tx_power=15.0,         # 15W for C-band
+                tx_gain=25.0,          # Higher gain
+                rx_gain=50.0,          # Large C-band dish
+                noise_temp=120.0,      # Low noise C-band
+                bandwidth=36e6,        # 36 MHz transponder
+                required_snr=10.0,     # Higher SNR needed
+                band_name="C-band"
+            ),
+            "ku-band": cls(
+                frequency=14.0e9,      # Ku-band uplink
+                tx_power=10.0,         # 10W for Ku-band
+                tx_gain=35.0,          # High gain, narrow beam
+                rx_gain=55.0,          # High gain Ku dish
+                noise_temp=100.0,      # Excellent LNA
+                bandwidth=50e6,        # 50 MHz bandwidth
+                required_snr=12.0,     # Higher SNR requirement
+                band_name="Ku-band"
+            ),
+            "ka-band": cls(
+                frequency=20.0e9,      # Ka-band (Starlink-like)
+                tx_power=5.0,          # 5W for Ka-band
+                tx_gain=42.0,          # Very high gain
+                rx_gain=60.0,          # High-performance Ka dish
+                noise_temp=80.0,       # Excellent Ka LNA
+                bandwidth=250e6,       # 250 MHz wide bandwidth
+                required_snr=15.0,     # High SNR for high data rates
+                band_name="Ka-band"
+            ),
+            "v-band": cls(
+                frequency=60.0e9,      # V-band experimental
+                tx_power=2.0,          # 2W for V-band
+                tx_gain=50.0,          # Extremely high gain
+                rx_gain=65.0,          # Very high gain V-band
+                noise_temp=200.0,      # Higher noise at V-band
+                bandwidth=1000e6,      # 1 GHz bandwidth
+                required_snr=18.0,     # Very high SNR needed
+                band_name="V-band"
+            )
+        }
+        
+        return presets.get(band_type.lower(), presets["s-band"])
     
     def calculate_data_rate(self, range_km: float, elevation: float) -> float:
-        """Calculate achievable data rate based on link budget."""
-        # Free space path loss
-        wavelength = 3e8 / self.frequency
+        """Calculate achievable data rate based on realistic link budget."""
+        # Free space path loss (Friis equation)
+        wavelength = 3e8 / self.frequency  # c = λf
         path_loss_db = 20 * math.log10(4 * math.pi * range_km * 1000 / wavelength)
         
-        # Atmospheric losses (simplified)
-        atm_loss_db = 0.5 / math.sin(math.radians(max(elevation, 5)))
+        # Frequency-dependent atmospheric losses
+        atm_loss_db = self._calculate_atmospheric_loss(elevation)
         
-        # Received power
-        eirp_db = 10 * math.log10(self.tx_power) + self.tx_gain
-        rx_power_db = eirp_db - path_loss_db - atm_loss_db + self.rx_gain
+        # Rain fade (frequency dependent)
+        rain_loss_db = self._calculate_rain_loss(elevation)
         
-        # Noise power
-        k_boltzmann = 1.38e-23
-        noise_power_db = 10 * math.log10(k_boltzmann * self.noise_temp * self.bandwidth)
+        # Total path loss
+        total_loss_db = path_loss_db + atm_loss_db + rain_loss_db
         
-        # SNR
-        snr_db = rx_power_db - noise_power_db
+        # Link budget calculation
+        eirp_dbw = 10 * math.log10(self.tx_power) + self.tx_gain  # dBW
+        rx_power_dbw = eirp_dbw - total_loss_db + self.rx_gain
         
-        # Data rate using Shannon capacity (simplified)
+        # Thermal noise power
+        k_boltzmann = 1.38e-23  # Boltzmann constant
+        noise_power_dbw = 10 * math.log10(k_boltzmann * self.noise_temp * self.bandwidth)
+        
+        # Signal-to-noise ratio
+        snr_db = rx_power_dbw - noise_power_dbw
+        
+        # Shannon capacity with realistic coding gain
         if snr_db >= self.required_snr:
             snr_linear = 10**(snr_db / 10)
-            data_rate = self.bandwidth * math.log2(1 + snr_linear) / 1e6  # Mbps
-            return min(data_rate, 100.0)  # Cap at 100 Mbps
+            # Shannon capacity
+            shannon_capacity = self.bandwidth * math.log2(1 + snr_linear) / 1e6  # Mbps
+            
+            # Apply realistic coding efficiency (typically 0.6-0.8 for satellite links)
+            coding_efficiency = 0.75
+            practical_data_rate = shannon_capacity * coding_efficiency
+            
+            # Band-specific maximum data rates (realistic limits)
+            max_rates = {
+                "L-band": 10.0,      # L-band: up to 10 Mbps
+                "S-band": 50.0,      # S-band: up to 50 Mbps  
+                "C-band": 200.0,     # C-band: up to 200 Mbps
+                "Ku-band": 500.0,    # Ku-band: up to 500 Mbps
+                "Ka-band": 2000.0,   # Ka-band: up to 2 Gbps
+                "V-band": 10000.0    # V-band: up to 10 Gbps
+            }
+            
+            max_rate = max_rates.get(self.band_name, 100.0)
+            return min(practical_data_rate, max_rate)
         else:
-            return 0.0  # No communication possible
+            return 0.0  # Link margin insufficient
+    
+    def _calculate_atmospheric_loss(self, elevation: float) -> float:
+        """Calculate frequency-dependent atmospheric absorption."""
+        # Atmospheric loss increases with frequency and decreases with elevation
+        elevation_rad = math.radians(max(elevation, 1.0))
+        
+        # Frequency-dependent atmospheric absorption (dB/km)
+        if self.frequency < 2e9:        # L-band
+            absorption_rate = 0.005
+        elif self.frequency < 8e9:      # S/C-band  
+            absorption_rate = 0.01
+        elif self.frequency < 20e9:     # X/Ku-band
+            absorption_rate = 0.02
+        elif self.frequency < 40e9:     # Ka-band
+            absorption_rate = 0.05
+        else:                           # V-band and above
+            absorption_rate = 0.15
+        
+        # Path length through atmosphere (simplified)
+        atmosphere_thickness = 50.0  # km effective thickness
+        path_length = atmosphere_thickness / math.sin(elevation_rad)
+        
+        return absorption_rate * path_length
+    
+    def _calculate_rain_loss(self, elevation: float) -> float:
+        """Calculate rain fade based on frequency and elevation."""
+        # Rain attenuation increases dramatically with frequency
+        # ITU-R P.838 model (simplified)
+        
+        if self.frequency < 10e9:       # Below 10 GHz: minimal rain fade
+            return 0.1
+        elif self.frequency < 20e9:     # Ku-band: moderate rain fade
+            rain_rate = 2.0  # dB for moderate rain
+        elif self.frequency < 40e9:     # Ka-band: significant rain fade
+            rain_rate = 5.0  # dB for moderate rain
+        else:                           # V-band: severe rain fade
+            rain_rate = 15.0  # dB for moderate rain
+        
+        # Rain fade decreases with higher elevation (shorter path)
+        elevation_factor = math.sin(math.radians(max(elevation, 5.0)))
+        return rain_rate * (1.0 - elevation_factor * 0.5)
 
 
 class ContactPredictor:
