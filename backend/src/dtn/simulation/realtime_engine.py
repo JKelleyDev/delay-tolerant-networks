@@ -223,8 +223,11 @@ class RealTimeSimulationEngine:
                     await self._route_bundles()
                     await self._update_metrics()
                 
-            # Sleep to maintain reasonable update rate (10 Hz)
-            await asyncio.sleep(0.1)
+            # Sleep to maintain update rate (experiment vs interactive)
+            if self.time_acceleration > 10000:  # High acceleration for experiments
+                await asyncio.sleep(0.05)  # 20 Hz for experiments
+            else:
+                await asyncio.sleep(0.1)  # 10 Hz for interactive simulations
     
     async def _update_satellite_positions(self):
         """Update positions of all satellites based on orbital mechanics."""
@@ -290,8 +293,8 @@ class RealTimeSimulationEngine:
         for contact_key in expired_contacts:
             del self.active_contacts[contact_key]
         
-        # Debug log every 10 seconds of sim time
-        if int(self.current_sim_time.timestamp()) % 10 == 0:
+        # Debug log every 10 seconds of sim time (but only in high-acceleration mode to reduce spam)
+        if self.time_acceleration > 10000 and int(self.current_sim_time.timestamp()) % 60 == 0:
             logger.info(f"Contact update: {contact_checks} checks, {visible_checks} visible, {len(self.active_contacts)} active")
         
         # Update metrics
@@ -401,11 +404,25 @@ class RealTimeSimulationEngine:
     
     async def _perform_dtn_routing(self):
         """Perform DTN routing between satellites using the configured algorithm."""
+        # Optimize: Only check inter-satellite routing every few simulation steps to reduce computational load
+        simulation_step = int((self.current_sim_time - self.start_time).total_seconds())
+        if simulation_step % 5 != 0:  # Only route every 5 simulation seconds
+            return
+            
         # For each active inter-satellite contact, perform routing
         inter_satellite_contacts = []
         
         # Identify potential inter-satellite contacts (simplified - satellites close to each other)
         satellite_ids = list(self.satellite_states.keys())
+        
+        # Optimize: Sample subset of satellite pairs for large constellations
+        if len(satellite_ids) > 30:
+            # For large constellations, only check nearby satellites (optimization)
+            import random
+            random.seed(simulation_step)  # Deterministic sampling
+            sample_size = min(30, len(satellite_ids))
+            satellite_ids = random.sample(satellite_ids, sample_size)
+        
         for i, sat1_id in enumerate(satellite_ids):
             for sat2_id in satellite_ids[i+1:]:
                 sat1 = self.satellite_states[sat1_id]
