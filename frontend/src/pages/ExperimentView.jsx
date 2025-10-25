@@ -21,7 +21,9 @@ const ExperimentView = () => {
     bundle_rate: 1.0,
     buffer_size: 10485760, // 10MB
     ground_stations: ['gs_los_angeles', 'gs_tokyo'],
-    rf_band: 'ka-band' // Default to Ka-band (modern broadband)
+    rf_band: 'ka-band', // Default to Ka-band (modern broadband)
+    weather_enabled: false, // Weather simulation
+    weather_seed: null // Random seed for weather
   })
 
   useEffect(() => {
@@ -104,7 +106,9 @@ const ExperimentView = () => {
           bundle_rate: 1.0,
           buffer_size: 10485760,
           ground_stations: ['gs_los_angeles', 'gs_tokyo'],
-          rf_band: 'ka-band'
+          rf_band: 'ka-band',
+          weather_enabled: false,
+          weather_seed: null
         })
         await fetchExperiments()
       }
@@ -216,6 +220,9 @@ const ExperimentView = () => {
       'Link Margin (dB)',
       'Data Transmitted (MB)',
       'RF Limited Contacts',
+      // Weather Effects
+      'Weather Affected Contacts',
+      'Average Weather Attenuation (dB)',
       // Cross-Layer
       'Cross-Layer Performance Score'
     ]
@@ -237,6 +244,9 @@ const ExperimentView = () => {
       data.average_link_margin_db ? data.average_link_margin_db.toFixed(1) : '0.0',
       data.total_data_transmitted_mb ? data.total_data_transmitted_mb.toFixed(1) : '0.0',
       data.rf_limited_contacts || 0,
+      // Weather Effects
+      data.weather_affected_contacts || 0,
+      data.average_weather_attenuation_db ? data.average_weather_attenuation_db.toFixed(1) : '0.0',
       // Cross-Layer
       data.cross_layer_performance_score ? data.cross_layer_performance_score.toFixed(3) : '0.000'
     ])
@@ -454,6 +464,56 @@ const ExperimentView = () => {
                 )}
               </div>
 
+              <div>
+                <label className="form-label">Weather Simulation</label>
+                <div className="mb-2 text-xs text-blue-300">
+                  Enable realistic weather effects on satellite RF performance
+                </div>
+                
+                <div className="space-y-3">
+                  <label className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.weather_enabled}
+                      onChange={(e) => setFormData({...formData, weather_enabled: e.target.checked})}
+                      className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded"
+                    />
+                    <span className="text-white">
+                      Enable Weather Simulation
+                    </span>
+                  </label>
+                  
+                  {formData.weather_enabled && (
+                    <div>
+                      <label className="form-label text-xs">Weather Seed (optional)</label>
+                      <input
+                        type="number"
+                        value={formData.weather_seed || ''}
+                        onChange={(e) => setFormData({...formData, weather_seed: e.target.value ? parseInt(e.target.value) : null})}
+                        className="form-input w-full text-sm"
+                        placeholder="Random seed for reproducible weather patterns"
+                      />
+                      <div className="mt-1 text-xs text-gray-400">
+                        Leave empty for random weather. Use same seed for reproducible results.
+                      </div>
+                    </div>
+                  )}
+                  
+                  {formData.weather_enabled && (
+                    <div className="text-xs bg-blue-900 bg-opacity-30 p-2 rounded">
+                      <div className="text-blue-300 mb-1">Weather Effects Include:</div>
+                      <div className="text-gray-300 space-y-0.5">
+                        <div>• Rain fade attenuation (frequency dependent)</div>
+                        <div>• Atmospheric absorption (humidity, temperature)</div>
+                        <div>• Cloud cover effects on RF links</div>
+                        <div>• Regional weather patterns (9 global regions)</div>
+                        <div>• Real-time weather evolution during experiment</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="form-label">Duration (hours)</label>
@@ -659,6 +719,14 @@ const ExperimentView = () => {
                     </div>
                   </div>
                   <div>
+                    <span className="text-gray-400">Weather:</span>
+                    <div className="text-white">
+                      {experimentResults.experiment.weather_enabled ? 
+                        `Enabled${experimentResults.experiment.weather_seed ? ` (Seed: ${experimentResults.experiment.weather_seed})` : ''}` 
+                        : 'Disabled'}
+                    </div>
+                  </div>
+                  <div>
                     <span className="text-gray-400">Duration:</span>
                     <div className="text-white">{experimentResults.experiment.duration} hours</div>
                   </div>
@@ -767,6 +835,30 @@ const ExperimentView = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Weather Effects */}
+                    {experimentResults.experiment.weather_enabled && (
+                      <div className="mb-4">
+                        <h5 className="text-sm font-medium text-gray-300 mb-2 border-b border-gray-600 pb-1">
+                          🌦️ Weather Effects
+                        </h5>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Weather Affected Contacts:</span>
+                            <span className="text-white">
+                              {data.weather_affected_contacts || 0}
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between">
+                            <span className="text-gray-400">Avg Weather Attenuation:</span>
+                            <span className="text-white">
+                              {data.average_weather_attenuation_db ? data.average_weather_attenuation_db.toFixed(1) : '0.0'} dB
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Cross-Layer Analysis */}
                     <div>

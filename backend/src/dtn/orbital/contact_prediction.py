@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .mechanics import OrbitalMechanics, SatelliteState, KeplerianElements, GeodeticPosition
+from ..weather.weather_model import WeatherSimulator, WeatherCondition
 
 
 @dataclass
@@ -27,6 +28,9 @@ class ContactWindow:
     data_rate: float  # Mbps
     quality_factor: float = 1.0  # 0-1 link quality
     is_predicted: bool = True
+    weather_affected: bool = False  # Whether weather impacted this contact
+    average_snr: Optional[float] = None  # Average SNR during contact
+    weather_attenuation: Optional[float] = None  # Weather-induced loss in dB
     
     @property
     def duration(self) -> timedelta:
@@ -131,8 +135,8 @@ class LinkBudget:
         
         return presets.get(band_type.lower(), presets["s-band"])
     
-    def calculate_data_rate(self, range_km: float, elevation: float) -> float:
-        """Calculate achievable data rate based on realistic link budget."""
+    def calculate_data_rate(self, range_km: float, elevation: float, weather: Optional[WeatherCondition] = None) -> float:
+        """Calculate achievable data rate based on realistic link budget including weather effects."""
         # Free space path loss (Friis equation)
         wavelength = 3e8 / self.frequency  # c = λf
         path_loss_db = 20 * math.log10(4 * math.pi * range_km * 1000 / wavelength)
@@ -140,8 +144,15 @@ class LinkBudget:
         # Frequency-dependent atmospheric losses
         atm_loss_db = self._calculate_atmospheric_loss(elevation)
         
-        # Rain fade (frequency dependent)
-        rain_loss_db = self._calculate_rain_loss(elevation)
+        # Weather-aware rain fade calculation
+        if weather:
+            rain_loss_db = weather.get_rain_attenuation_db(self.frequency / 1e9, elevation)
+            # Add atmospheric attenuation from weather
+            weather_atm_loss = weather.get_atmospheric_attenuation_db(self.frequency / 1e9, elevation)
+            atm_loss_db += weather_atm_loss
+        else:
+            # Fallback to basic rain fade model
+            rain_loss_db = self._calculate_rain_loss(elevation)
         
         # Total path loss
         total_loss_db = path_loss_db + atm_loss_db + rain_loss_db
@@ -156,6 +167,11 @@ class LinkBudget:
         
         # Signal-to-noise ratio
         snr_db = rx_power_dbw - noise_power_dbw
+        
+        # Add weather-induced scintillation if available
+        if weather:
+            scintillation_db = weather.get_scintillation_db(self.frequency / 1e9, elevation)
+            snr_db += scintillation_db  # Can be positive or negative
         
         # Shannon capacity with realistic coding gain
         if snr_db >= self.required_snr:
@@ -178,9 +194,56 @@ class LinkBudget:
             }
             
             max_rate = max_rates.get(self.band_name, 100.0)
+            # Weather may further reduce effective data rate
+            if weather and weather.rain_rate_mm_hr > 10.0:
+                # Heavy rain reduces coding efficiency
+                weather_efficiency = max(0.3, 1.0 - (weather.rain_rate_mm_hr / 100.0))
+                practical_data_rate *= weather_efficiency
+            
             return min(practical_data_rate, max_rate)
         else:
             return 0.0  # Link margin insufficient
+    
+    def calculate_snr(self, range_km: float, elevation: float, weather: Optional[WeatherCondition] = None) -> Tuple[float, float]:
+        """Calculate SNR and weather attenuation in dB."""
+        # Free space path loss (Friis equation)
+        wavelength = 3e8 / self.frequency  # c = λf
+        path_loss_db = 20 * math.log10(4 * math.pi * range_km * 1000 / wavelength)
+        
+        # Frequency-dependent atmospheric losses
+        atm_loss_db = self._calculate_atmospheric_loss(elevation)
+        
+        # Weather-aware calculations
+        weather_attenuation_db = 0.0
+        if weather:
+            rain_loss_db = weather.get_rain_attenuation_db(self.frequency / 1e9, elevation)
+            weather_atm_loss = weather.get_atmospheric_attenuation_db(self.frequency / 1e9, elevation)
+            weather_attenuation_db = rain_loss_db + weather_atm_loss
+        else:
+            # Fallback to basic rain fade model
+            rain_loss_db = self._calculate_rain_loss(elevation)
+            weather_attenuation_db = rain_loss_db
+        
+        # Total path loss
+        total_loss_db = path_loss_db + atm_loss_db + weather_attenuation_db
+        
+        # Link budget calculation
+        eirp_dbw = 10 * math.log10(self.tx_power) + self.tx_gain  # dBW
+        rx_power_dbw = eirp_dbw - total_loss_db + self.rx_gain
+        
+        # Thermal noise power
+        k_boltzmann = 1.38e-23  # Boltzmann constant
+        noise_power_dbw = 10 * math.log10(k_boltzmann * self.noise_temp * self.bandwidth)
+        
+        # Signal-to-noise ratio
+        snr_db = rx_power_dbw - noise_power_dbw
+        
+        # Add weather-induced scintillation if available
+        if weather:
+            scintillation_db = weather.get_scintillation_db(self.frequency / 1e9, elevation)
+            snr_db += scintillation_db  # Can be positive or negative
+        
+        return snr_db, weather_attenuation_db
     
     def _calculate_atmospheric_loss(self, elevation: float) -> float:
         """Calculate frequency-dependent atmospheric absorption."""
@@ -227,10 +290,12 @@ class LinkBudget:
 class ContactPredictor:
     """Predicts contact windows for satellite networks."""
     
-    def __init__(self):
+    def __init__(self, weather_enabled: bool = False, weather_seed: Optional[int] = None):
         self.orbital_mechanics = OrbitalMechanics()
         self.link_budget = LinkBudget()
         self.prediction_cache: Dict[str, List[ContactWindow]] = {}
+        self.weather_enabled = weather_enabled
+        self.weather_simulator = WeatherSimulator(seed=weather_seed) if weather_enabled else None
     
     def predict_contacts(
         self,
@@ -249,7 +314,16 @@ class ContactPredictor:
         # Track ongoing contacts
         active_contacts: Dict[str, Dict] = {}
         
+        # Initialize weather simulation if enabled
+        if self.weather_enabled and self.weather_simulator:
+            # Advance weather to start time (if not already at current time)
+            time_step_minutes = time_step_seconds / 60.0
+        
         while current_time <= end_time:
+            # Advance weather simulation if enabled
+            if self.weather_enabled and self.weather_simulator:
+                self.weather_simulator.advance_weather(time_step_minutes)
+            
             # Update satellite positions
             sat_states = {}
             for sat_id, elements in satellites.items():
@@ -274,10 +348,21 @@ class ContactPredictor:
                     if (elevation >= ground_station.elevation_mask and 
                         range_km <= ground_station.max_range):
                         
-                        # Calculate data rate
-                        data_rate = self.link_budget.calculate_data_rate(range_km, elevation)
+                        # Get weather conditions at ground station location if enabled
+                        weather_condition = None
+                        if self.weather_enabled and self.weather_simulator:
+                            weather_condition = self.weather_simulator.get_weather_at_location(
+                                ground_station.position.latitude,
+                                ground_station.position.longitude
+                            )
+                        
+                        # Calculate data rate with weather effects
+                        data_rate = self.link_budget.calculate_data_rate(range_km, elevation, weather_condition)
                         
                         if data_rate > 0:
+                            # Calculate SNR and weather metrics for this contact
+                            snr_db, weather_attenuation = self.link_budget.calculate_snr(range_km, elevation, weather_condition)
+                            
                             if contact_key not in active_contacts:
                                 # New contact starting
                                 active_contacts[contact_key] = {
@@ -286,7 +371,10 @@ class ContactPredictor:
                                     'max_range': range_km,
                                     'max_data_rate': data_rate,
                                     'sat_id': sat_id,
-                                    'gs_id': gs_id
+                                    'gs_id': gs_id,
+                                    'snr_samples': [snr_db],
+                                    'weather_attenuation': weather_attenuation,
+                                    'weather_affected': weather_condition is not None and weather_condition.rain_rate_mm_hr > 1.0
                                 }
                             else:
                                 # Update ongoing contact
@@ -294,11 +382,21 @@ class ContactPredictor:
                                     active_contacts[contact_key]['max_elevation'] = elevation
                                 if data_rate > active_contacts[contact_key]['max_data_rate']:
                                     active_contacts[contact_key]['max_data_rate'] = data_rate
+                                # Add SNR sample for averaging
+                                active_contacts[contact_key]['snr_samples'].append(snr_db)
+                                # Update weather effects
+                                if weather_attenuation > active_contacts[contact_key]['weather_attenuation']:
+                                    active_contacts[contact_key]['weather_attenuation'] = weather_attenuation
+                                if weather_condition and weather_condition.rain_rate_mm_hr > 1.0:
+                                    active_contacts[contact_key]['weather_affected'] = True
                     else:
                         # Contact ended or not possible
                         if contact_key in active_contacts:
                             # End the contact
                             contact_info = active_contacts[contact_key]
+                            
+                            # Calculate average SNR
+                            avg_snr = sum(contact_info.get('snr_samples', [0])) / len(contact_info.get('snr_samples', [1]))
                             
                             contact = ContactWindow(
                                 contact_id=f"contact_{len(contacts):06d}",
@@ -308,7 +406,10 @@ class ContactPredictor:
                                 end_time=current_time,
                                 max_elevation=contact_info['max_elevation'],
                                 max_range=contact_info['max_range'],
-                                data_rate=contact_info['max_data_rate']
+                                data_rate=contact_info['max_data_rate'],
+                                weather_affected=contact_info.get('weather_affected', False),
+                                average_snr=avg_snr,
+                                weather_attenuation=contact_info.get('weather_attenuation', 0.0)
                             )
                             contacts.append(contact)
                             del active_contacts[contact_key]
@@ -369,6 +470,11 @@ class ContactPredictor:
         
         # Close any remaining active contacts
         for contact_key, contact_info in active_contacts.items():
+            # Calculate average SNR for final contacts
+            avg_snr = None
+            if 'snr_samples' in contact_info and contact_info['snr_samples']:
+                avg_snr = sum(contact_info['snr_samples']) / len(contact_info['snr_samples'])
+            
             contact = ContactWindow(
                 contact_id=f"final_contact_{len(contacts):06d}",
                 source_id=contact_info['sat_id'],
@@ -377,7 +483,10 @@ class ContactPredictor:
                 end_time=end_time,
                 max_elevation=contact_info['max_elevation'],
                 max_range=contact_info['max_range'],
-                data_rate=contact_info['max_data_rate']
+                data_rate=contact_info['max_data_rate'],
+                weather_affected=contact_info.get('weather_affected', False),
+                average_snr=avg_snr,
+                weather_attenuation=contact_info.get('weather_attenuation', 0.0)
             )
             contacts.append(contact)
         
@@ -487,6 +596,12 @@ class ContactPredictor:
                 # (In real implementation, would use proper event scheduling)
         
         return optimized_contacts
+    
+    def get_weather_summary(self) -> Optional[Dict]:
+        """Get current weather conditions summary if weather simulation is enabled."""
+        if self.weather_enabled and self.weather_simulator:
+            return self.weather_simulator.get_weather_summary()
+        return None
 
 
 def create_major_cities_ground_stations() -> Dict[str, GroundStation]:

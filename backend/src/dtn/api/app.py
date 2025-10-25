@@ -826,7 +826,7 @@ async def create_experiment(config: dict):
         if gs_id not in all_gs_dict:
             raise HTTPException(status_code=400, detail=f"Ground station '{gs_id}' not found")
     
-    # Store experiment with RF configuration
+    # Store experiment with RF and weather configuration
     experiment_store[experiment_id] = {
         "id": experiment_id,
         "name": config["name"],
@@ -841,6 +841,8 @@ async def create_experiment(config: dict):
         "source_station": ground_stations[0],
         "destination_station": ground_stations[1],
         "rf_band": config.get("rf_band", "ka-band"),  # RF frequency band selection
+        "weather_enabled": config.get("weather_enabled", False),  # Weather simulation
+        "weather_seed": config.get("weather_seed"),  # Weather random seed
         "created_at": datetime.now().isoformat() + "Z",
         "results": {},
         "config": config
@@ -916,7 +918,9 @@ async def run_experiment(experiment_id: str):
                 duration_hours=experiment["duration"],
                 bundle_rate=experiment["bundle_rate"],
                 ground_stations=experiment["ground_stations"],
-                rf_band=experiment.get("rf_band", "ka-band")
+                rf_band=experiment.get("rf_band", "ka-band"),
+                weather_enabled=experiment.get("weather_enabled", False),
+                weather_seed=experiment.get("weather_seed")
             )
             
             results[algorithm] = sim_results
@@ -953,16 +957,23 @@ async def run_fast_orbital_experiment(
     duration_hours: float,
     bundle_rate: float,
     temp_sim_id: str,
-    rf_band: str = "ka-band"
+    rf_band: str = "ka-band",
+    weather_enabled: bool = False,
+    weather_seed: int = None
 ) -> dict:
     """Run a fast orbital simulation for experiments - completes in seconds."""
     from dtn.orbital.mechanics import OrbitalMechanics
+    from dtn.orbital.contact_prediction import ContactPredictor, LinkBudget
     import random
     
     logger.info(f"Fast orbital experiment: {len(satellite_elements)} satellites, {duration_hours}h duration, {routing_algorithm} routing")
     
-    # Initialize orbital mechanics
+    # Initialize orbital mechanics and weather-aware contact prediction
     orbital_mechanics = OrbitalMechanics()
+    contact_predictor = ContactPredictor(weather_enabled=weather_enabled, weather_seed=weather_seed)
+    
+    # Initialize RF link budget for specified band
+    link_budget = LinkBudget.create_preset(rf_band)
     
     # Time step for simulation (larger steps = faster execution)
     time_step_minutes = 5  # 5-minute time steps for good granularity
@@ -985,6 +996,10 @@ async def run_fast_orbital_experiment(
     total_bundle_replications = 0   # Count bundle replications
     bundle_copy_tracking = {}       # Track copies per bundle
     
+    # Weather Effects Metrics
+    weather_affected_contacts = 0
+    weather_attenuation_samples = []
+    
     source_gs_id = list(ground_stations.keys())[0]
     dest_gs_id = list(ground_stations.keys())[1]
     
@@ -997,6 +1012,10 @@ async def run_fast_orbital_experiment(
     # Run simulation in time steps
     for step in range(total_steps):
         current_time = datetime.now() + timedelta(minutes=step * time_step_minutes)
+        
+        # Advance weather simulation if enabled
+        if weather_enabled and contact_predictor.weather_simulator:
+            contact_predictor.weather_simulator.advance_weather(time_step_minutes)
         
         # Update satellite positions (sample for large constellations)
         satellite_positions = {}
@@ -1045,13 +1064,28 @@ async def run_fast_orbital_experiment(
                 
                 # RF Link Budget Analysis (Physical Layer)
                 if distance <= 3000 and elevation >= 5.0:  # Basic geometric visibility
-                    # Calculate RF link performance
-                    data_rate_mbps = link_budget.calculate_data_rate(distance, elevation)
+                    # Get weather conditions if weather simulation is enabled
+                    weather_condition = None
+                    if weather_enabled and contact_predictor.weather_simulator:
+                        weather_condition = contact_predictor.weather_simulator.get_weather_at_location(
+                            ground_station.position.latitude,
+                            ground_station.position.longitude
+                        )
+                    
+                    # Calculate RF link performance with weather effects
+                    data_rate_mbps = link_budget.calculate_data_rate(distance, elevation, weather_condition)
                     
                     if data_rate_mbps > 0:  # Link budget supports communication
                         contact_key = f"{sat_id}_{gs_id}"
                         contacts_this_step.add(contact_key)
                         total_contacts += 1
+                        
+                        # Track weather effects if enabled
+                        if weather_condition and weather_condition.rain_rate_mm_hr > 1.0:
+                            weather_affected_contacts += 1
+                            weather_attenuation = weather_condition.get_rain_attenuation_db(link_budget.frequency / 1e9, elevation)
+                            weather_attenuation += weather_condition.get_atmospheric_attenuation_db(link_budget.frequency / 1e9, elevation)
+                            weather_attenuation_samples.append(weather_attenuation)
                         
                         # Store RF metrics for this contact (Physical Layer metrics)
                         # Free space path loss calculation
@@ -1339,7 +1373,12 @@ async def run_fast_orbital_experiment(
             # OSI Layer Integration metrics
             "physical_layer_limited_deliveries": rf_limited_contacts,
             "network_layer_routing_efficiency": final_delivery_ratio / max(0.1, final_network_overhead),
-            "cross_layer_performance_score": (final_delivery_ratio * rf_link_availability) / 100
+            "cross_layer_performance_score": (final_delivery_ratio * rf_link_availability) / 100,
+            
+            # Weather Effects metrics
+            "weather_enabled": weather_enabled,
+            "weather_affected_contacts": weather_affected_contacts,
+            "average_weather_attenuation_db": sum(weather_attenuation_samples) / len(weather_attenuation_samples) if weather_attenuation_samples else 0.0
         }
     }
 
@@ -1350,7 +1389,9 @@ async def simulate_algorithm_performance_realtime(
     duration_hours: float,
     bundle_rate: float,
     ground_stations: list,
-    rf_band: str = "ka-band"
+    rf_band: str = "ka-band",
+    weather_enabled: bool = False,
+    weather_seed: int = None
 ) -> dict:
     """Run real-time simulation for experiment with actual DTN routing."""
     import time
@@ -1393,6 +1434,8 @@ async def simulate_algorithm_performance_realtime(
     start_time = time.time()
     logger.info(f"Starting FAST orbital simulation for experiment: {routing_algorithm} routing over {duration_hours}h")
     
+    # Weather configuration is passed as parameters
+    
     # Use a dedicated fast experiment simulator instead of real-time engine
     final_metrics = await run_fast_orbital_experiment(
         satellite_elements=satellite_elements,
@@ -1401,7 +1444,9 @@ async def simulate_algorithm_performance_realtime(
         duration_hours=duration_hours,
         bundle_rate=bundle_rate,
         temp_sim_id=temp_sim_id,
-        rf_band=rf_band
+        rf_band=rf_band,
+        weather_enabled=weather_enabled,
+        weather_seed=weather_seed
     )
     
     # Log the actual results
@@ -1450,6 +1495,11 @@ async def simulate_algorithm_performance_realtime(
         # Cross-Layer Analysis (OSI Integration)
         "physical_layer_limited_deliveries": metrics["physical_layer_limited_deliveries"],
         "cross_layer_performance_score": metrics["cross_layer_performance_score"],
+        
+        # Weather Effects
+        "weather_enabled": metrics.get("weather_enabled", False),
+        "weather_affected_contacts": metrics.get("weather_affected_contacts", 0),
+        "average_weather_attenuation_db": metrics.get("average_weather_attenuation_db", 0.0),
         
         # Legacy compatibility
         "average_hop_count": 2.5  # Estimated based on DTN routing
