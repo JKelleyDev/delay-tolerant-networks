@@ -374,14 +374,53 @@ const SimulationView = () => {
                         {/* Live status details for running simulations */}
                         {simulation.status === 'running' && simulationDetails[simulation.id] && (
                           <div className="mt-2 text-xs text-gray-300 bg-gray-800 p-2 rounded">
+                            {/* Time progression indicator */}
+                            {simulationDetails[simulation.id].current_sim_time && (
+                              <div className="mb-2 text-yellow-300 bg-yellow-900 bg-opacity-30 p-1 rounded">
+                                <div className="text-center">
+                                  <div className="font-mono">Sim Time: {new Date(simulationDetails[simulation.id].current_sim_time).toLocaleTimeString()}</div>
+                                  <div className="text-xs">Acceleration: {simulationDetails[simulation.id].time_acceleration || 3600}x real-time</div>
+                                </div>
+                                
+                                {/* Progress bar for simulation duration */}
+                                {simulation.duration && simulationDetails[simulation.id].runtime_seconds && (
+                                  <div className="mt-1">
+                                    <div className="flex justify-between text-xs mb-1">
+                                      <span>Progress</span>
+                                      <span>{Math.min(100, (simulationDetails[simulation.id].runtime_seconds / (simulation.duration * 3600) * 100)).toFixed(1)}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                      <div 
+                                        className="bg-blue-400 h-1.5 rounded-full transition-all duration-1000" 
+                                        style={{
+                                          width: `${Math.min(100, (simulationDetails[simulation.id].runtime_seconds / (simulation.duration * 3600) * 100))}%`
+                                        }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            
                             <div className="grid grid-cols-2 gap-2">
-                              <div>Runtime: {simulationDetails[simulation.id].runtime_seconds}s</div>
+                              <div>Runtime: {Math.round(simulationDetails[simulation.id].runtime_seconds || 0)}s</div>
                               <div>Bundles: {simulationDetails[simulation.id].bundles_generated || 0}</div>
                               <div>Delivered: {simulationDetails[simulation.id].bundles_delivered || 0}</div>
                               <div>Contacts: {simulationDetails[simulation.id].active_contacts || 0}</div>
                             </div>
-                            <div className="mt-1 text-blue-300">
-                              Activity: {simulationDetails[simulation.id].current_activity || 'Initializing...'}
+                            
+                            {/* Delivery ratio and network status */}
+                            {simulationDetails[simulation.id].delivery_ratio !== undefined && (
+                              <div className="mt-1 text-center">
+                                <span className="text-green-300">Delivery: {(simulationDetails[simulation.id].delivery_ratio * 100).toFixed(1)}%</span>
+                                {simulationDetails[simulation.id].satellites_active && (
+                                  <span className="ml-2 text-blue-300">Sats: {simulationDetails[simulation.id].satellites_active}</span>
+                                )}
+                              </div>
+                            )}
+                            
+                            <div className="mt-1 text-blue-300 text-center">
+                              {simulationDetails[simulation.id].current_activity || 'Initializing orbital propagation...'}
                             </div>
                           </div>
                         )}

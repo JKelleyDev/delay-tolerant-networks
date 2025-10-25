@@ -5,6 +5,7 @@ const ExperimentView = () => {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [experiments, setExperiments] = useState([])
   const [constellations, setConstellations] = useState({})
+  const [groundStations, setGroundStations] = useState({})
   const [loading, setLoading] = useState(false)
   const [runningExperiments, setRunningExperiments] = useState(new Set())
   const [selectedExperiment, setSelectedExperiment] = useState(null)
@@ -17,12 +18,14 @@ const ExperimentView = () => {
     routing_algorithms: ['epidemic', 'prophet'],
     duration: 24,
     bundle_rate: 1.0,
-    buffer_size: 10485760 // 10MB
+    buffer_size: 10485760, // 10MB
+    ground_stations: ['gs_los_angeles', 'gs_tokyo']
   })
 
   useEffect(() => {
     fetchExperiments()
     fetchConstellations()
+    fetchGroundStations()
   }, [])
 
   const fetchExperiments = async () => {
@@ -49,6 +52,18 @@ const ExperimentView = () => {
     }
   }
 
+  const fetchGroundStations = async () => {
+    try {
+      const response = await fetch('/api/v2/ground_stations/library')
+      const data = await response.json()
+      if (data.success) {
+        setGroundStations(data.data.ground_stations || {})
+      }
+    } catch (err) {
+      console.error('Failed to fetch ground stations:', err)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -72,7 +87,8 @@ const ExperimentView = () => {
           routing_algorithms: ['epidemic', 'prophet'],
           duration: 24,
           bundle_rate: 1.0,
-          buffer_size: 10485760
+          buffer_size: 10485760,
+          ground_stations: ['gs_los_angeles', 'gs_tokyo']
         })
         await fetchExperiments()
       }
@@ -297,6 +313,65 @@ const ExperimentView = () => {
                 </div>
               </div>
 
+              <div>
+                <label className="form-label">Ground Stations (Source & Destination)</label>
+                <div className="mb-3 text-xs text-blue-300">
+                  Select exactly 2 stations for DTN bundle routing experiments
+                </div>
+                
+                <div className="space-y-2 mb-3">
+                  <div>
+                    <label className="form-label text-xs">Source Station</label>
+                    <select
+                      value={formData.ground_stations[0] || ''}
+                      onChange={(e) => {
+                        const newSelection = [e.target.value, formData.ground_stations[1]].filter(Boolean)
+                        setFormData({...formData, ground_stations: newSelection})
+                      }}
+                      className="form-input w-full text-sm"
+                    >
+                      <option value="">Select source station...</option>
+                      {Object.entries(groundStations).map(([stationId, station]) => (
+                        <option key={stationId} value={stationId} disabled={formData.ground_stations[1] === stationId}>
+                          {station.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="form-label text-xs">Destination Station</label>
+                    <select
+                      value={formData.ground_stations[1] || ''}
+                      onChange={(e) => {
+                        const newSelection = [formData.ground_stations[0], e.target.value].filter(Boolean)
+                        setFormData({...formData, ground_stations: newSelection})
+                      }}
+                      className="form-input w-full text-sm"
+                    >
+                      <option value="">Select destination station...</option>
+                      {Object.entries(groundStations).map(([stationId, station]) => (
+                        <option key={stationId} value={stationId} disabled={formData.ground_stations[0] === stationId}>
+                          {station.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                {formData.ground_stations.length === 2 && (
+                  <div className="text-xs text-green-300 bg-green-900 bg-opacity-30 p-2 rounded">
+                    ✓ Experiment Path: {groundStations[formData.ground_stations[0]]?.name} → {groundStations[formData.ground_stations[1]]?.name}
+                  </div>
+                )}
+                
+                {formData.ground_stations.length !== 2 && (
+                  <div className="text-xs text-yellow-300 bg-yellow-900 bg-opacity-30 p-2 rounded">
+                    ⚠ Please select both source and destination stations for DTN routing
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="form-label">Duration (hours)</label>
@@ -327,7 +402,7 @@ const ExperimentView = () => {
               <div className="flex space-x-3 pt-4">
                 <button
                   type="submit"
-                  disabled={loading || formData.routing_algorithms.length === 0}
+                  disabled={loading || formData.routing_algorithms.length === 0 || formData.ground_stations.length !== 2}
                   className="btn-primary flex-1 disabled:opacity-50"
                 >
                   {loading ? 'Creating...' : 'Create Experiment'}
