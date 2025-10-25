@@ -1,0 +1,11 @@
+station_id,name,latitude,longitude,altitude,elevation_mask,max_range
+gs_research_alpha,Research Station Alpha,45.5017,-73.5673,0.032,5.0,1500.0
+gs_research_beta,Research Station Beta,-33.9249,18.4241,0.015,10.0,2000.0
+gs_research_gamma,Research Station Gamma,55.6761,12.5683,0.005,8.0,1800.0
+gs_arctic_station,Arctic Research Station,78.9167,11.9333,0.008,15.0,2500.0
+gs_antarctic_base,Antarctic Research Base,-77.8419,166.6863,0.025,12.0,2200.0
+gs_equatorial_site,Equatorial Tracking Site,0.3476,32.5825,1.135,5.0,2000.0
+gs_mountain_relay,Mountain Relay Station,27.9881,86.9250,5.364,20.0,3000.0
+gs_desert_station,Desert Communications Hub,24.7136,46.6753,0.612,8.0,2000.0
+gs_island_tracking,Pacific Island Tracker,-17.7334,-149.5665,0.002,5.0,1500.0
+gs_mobile_platform,Mobile Research Platform,35.8617,14.3754,0.090,10.0,1200.0

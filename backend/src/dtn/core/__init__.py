@@ -1,1 +1,1 @@
-"""Core DTN simulation components."""
+"""Core simulation engine components."""

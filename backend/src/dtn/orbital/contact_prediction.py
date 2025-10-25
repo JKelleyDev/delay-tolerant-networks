@@ -1,839 +1,431 @@
 """
-Contact Window Prediction Module for DTN Satellite Simulation
+Contact Prediction System
 
-This module predicts communication contact windows between satellites and
-ground stations, calculates line-of-sight visibility, and manages contact
-scheduling for DTN routing.
-
-Pair 2 Implementation Tasks:
-- Implement line-of-sight calculations with elevation angle constraints
-- Create contact window prediction algorithms for different orbit types
-- Add contact quality metrics (duration, max elevation, data rate)
-- Integrate with orbital mechanics for real-time contact prediction
-
-Dependencies:
-- astropy: pip install astropy
-- numpy: pip install numpy
-- src.orbital_mechanics: Local orbital mechanics module
+Predicts communication windows between satellites and ground stations
+based on orbital mechanics and visibility constraints.
 """
 
-from datetime import datetime, timezone
-from astropy import units as u  # type: ignore
-from astropy import coordinates as coord  # type: ignore
-from astropy.time import Time  # type: ignore
+import math
+from datetime import datetime, timedelta
+from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass, field
 import numpy as np
-from typing import List, Dict, Tuple, Optional, NamedTuple
-from dataclasses import dataclass
-import time
 
-try:
-    from .orbital_mechanics import (
-        OrbitalElements,
-        Position3D,
-        OrbitalMechanics,
-        Velocity3D,
-    )
-except ImportError:
-    # Handle case when module is imported directly
-    from orbital_mechanics import (  # type: ignore
-        OrbitalElements,
-        Position3D,
-        OrbitalMechanics,
-        Velocity3D,
-    )
+from .mechanics import OrbitalMechanics, SatelliteState, KeplerianElements, GeodeticPosition
+
+
+@dataclass
+class ContactWindow:
+    """Communication contact window between two nodes."""
+    contact_id: str
+    source_id: str
+    target_id: str
+    start_time: datetime
+    end_time: datetime
+    max_elevation: float  # degrees
+    max_range: float  # km
+    data_rate: float  # Mbps
+    quality_factor: float = 1.0  # 0-1 link quality
+    is_predicted: bool = True
+    
+    @property
+    def duration(self) -> timedelta:
+        """Contact duration."""
+        return self.end_time - self.start_time
+    
+    @property
+    def duration_seconds(self) -> float:
+        """Contact duration in seconds."""
+        return self.duration.total_seconds()
 
 
 @dataclass
 class GroundStation:
-    """Ground station configuration for contact calculations"""
-
+    """Ground station configuration."""
+    station_id: str
     name: str
-    latitude_deg: float  # -90 to 90
-    longitude_deg: float  # -180 to 180
-    altitude_m: float  # meters above sea level
-    min_elevation_deg: float = 10.0  # minimum elevation for contact
-    antenna_diameter_m: float = 10.0
-    max_data_rate_mbps: float = 100.0
-    e2: float = 6.6943799901377997e-3  # WGS-84 eccentricity squared
-
-    def to_ecef_position(self) -> Position3D:
-        """
-        Convert ground station location to ECEF coordinates
-
-        Returns:
-            Position3D in ECEF coordinate system
-
-        Use WGS84 ellipsoid parameters for accurate conversion
-        """
-        a = OrbitalMechanics.EARTH_RADIUS * 1000  # convert to meters
-        n = a / np.sqrt(1 - (self.e2 * np.sin(np.deg2rad(self.latitude_deg)) ** 2))
-
-        x = (
-            (n + self.altitude_m)
-            * np.cos(np.deg2rad(self.latitude_deg))
-            * np.cos(np.deg2rad(self.longitude_deg))
-        )
-        y = (
-            (n + self.altitude_m)
-            * np.cos(np.deg2rad(self.latitude_deg))
-            * np.sin(np.deg2rad(self.longitude_deg))
-        )
-        z = ((n + self.altitude_m) * (1 - self.e2)) * np.sin(
-            np.deg2rad(self.latitude_deg)
-        )
-
-        return Position3D(x, y, z, coordinate_system="ECEF")
-
-
-class ContactWindow(NamedTuple):
-    """Contact window between satellite and ground station"""
-
-    satellite_id: str
-    ground_station: str
-    start_time: float  # Unix timestamp
-    end_time: float  # Unix timestamp
-    duration_seconds: float
-    max_elevation_deg: float
-    max_data_rate_mbps: float
-    average_range_km: float
+    position: GeodeticPosition
+    elevation_mask: float = 10.0  # Minimum elevation angle (degrees)
+    max_range: float = 2000.0  # Maximum communication range (km)
+    antenna_gain: float = 40.0  # dBi
+    power: float = 100.0  # Watts
 
 
 @dataclass
-class ContactQuality:
-    """Contact quality metrics at specific time"""
-
-    elevation_deg: float
-    azimuth_deg: float
-    range_km: float
-    data_rate_mbps: float
-    signal_strength_db: float
-    doppler_shift_hz: float
+class LinkBudget:
+    """RF link budget parameters."""
+    frequency: float = 2.4e9  # Hz (S-band)
+    tx_power: float = 10.0  # Watts
+    tx_gain: float = 20.0  # dBi
+    rx_gain: float = 20.0  # dBi
+    noise_temp: float = 300.0  # Kelvin
+    bandwidth: float = 10e6  # Hz
+    required_snr: float = 10.0  # dB
+    
+    def calculate_data_rate(self, range_km: float, elevation: float) -> float:
+        """Calculate achievable data rate based on link budget."""
+        # Free space path loss
+        wavelength = 3e8 / self.frequency
+        path_loss_db = 20 * math.log10(4 * math.pi * range_km * 1000 / wavelength)
+        
+        # Atmospheric losses (simplified)
+        atm_loss_db = 0.5 / math.sin(math.radians(max(elevation, 5)))
+        
+        # Received power
+        eirp_db = 10 * math.log10(self.tx_power) + self.tx_gain
+        rx_power_db = eirp_db - path_loss_db - atm_loss_db + self.rx_gain
+        
+        # Noise power
+        k_boltzmann = 1.38e-23
+        noise_power_db = 10 * math.log10(k_boltzmann * self.noise_temp * self.bandwidth)
+        
+        # SNR
+        snr_db = rx_power_db - noise_power_db
+        
+        # Data rate using Shannon capacity (simplified)
+        if snr_db >= self.required_snr:
+            snr_linear = 10**(snr_db / 10)
+            data_rate = self.bandwidth * math.log2(1 + snr_linear) / 1e6  # Mbps
+            return min(data_rate, 100.0)  # Cap at 100 Mbps
+        else:
+            return 0.0  # No communication possible
 
 
 class ContactPredictor:
-    """Predicts contact windows between satellites and ground stations"""
-
-    def __init__(self, orbital_mechanics: OrbitalMechanics):
-        """
-        Initialize contact predictor
-
-        Args:
-            orbital_mechanics: Orbital mechanics calculator instance
-        """
-        self.orbital_mechanics = orbital_mechanics
-        self.ground_stations: Dict[str, GroundStation] = {
-            "hawaii": GroundStation("hawaii", 19.8968, -155.5828, 0),
-            "alaska": GroundStation("alaska", 64.2008, -149.4937, 0),
-            "svalbard": GroundStation("svalbard", 78.2298, 15.4078, 0),
-        }
-
-    def add_ground_station(self, station: GroundStation) -> None:
-        """Add ground station to contact prediction system"""
-        self.ground_stations[station.name] = station
-
-    def calculate_elevation_azimuth(
+    """Predicts contact windows for satellite networks."""
+    
+    def __init__(self):
+        self.orbital_mechanics = OrbitalMechanics()
+        self.link_budget = LinkBudget()
+        self.prediction_cache: Dict[str, List[ContactWindow]] = {}
+    
+    def predict_contacts(
         self,
-        satellite_position: Position3D,
-        ground_station: GroundStation,
-        timestamp: Time,
-    ) -> Tuple[float, float]:
-        """
-        Calculate elevation and azimuth angles from ground station to satellite
-        """
-        # Normalize timestamp to Unix float
-        if isinstance(timestamp, Time):
-            t_unix = timestamp.unix
-        else:
-            t_unix = float(timestamp)
-
-        # Get satellite ECEF in meters. Prefer fast internal conversion when we have ECI
-        # and an OrbitalMechanics instance (avoids heavy astropy transforms).
-        if getattr(
-            satellite_position, "coordinate_system", ""
-        ).upper() == "ECI" and hasattr(self.orbital_mechanics, "eci_to_ecef"):
-            # Detect whether satellite_position values are in meters or km by magnitude.
-            coords_abs_max = max(
-                abs(satellite_position.x),
-                abs(satellite_position.y),
-                abs(satellite_position.z),
-            )
-            try:
-                ecef_pos = self.orbital_mechanics.eci_to_ecef(
-                    satellite_position, t_unix
-                )
-                # If input coords are large (>1e5), assume meters and don't scale;
-                # otherwise treat as km -> m
-                if coords_abs_max > 1e5:
-                    sat_ecef_arr = np.array([ecef_pos.x, ecef_pos.y, ecef_pos.z])
-                else:
-                    sat_ecef_arr = (
-                        np.array([ecef_pos.x, ecef_pos.y, ecef_pos.z]) * 1000.0
-                    )
-            except Exception:
-                # fallback to astropy-based conversion (returns meters)
-                sat_ecef = self.satellite_eci_to_ecef(
-                    satellite_position, Time(t_unix, format="unix")
-                )
-                sat_ecef_arr = np.array([sat_ecef.x, sat_ecef.y, sat_ecef.z])
-        else:
-            # use astropy-based ECI->ECEF which handles units heuristically
-            sat_ecef = self.satellite_eci_to_ecef(
-                satellite_position, Time(t_unix, format="unix")
-            )
-            sat_ecef_arr = np.array([sat_ecef.x, sat_ecef.y, sat_ecef.z])
-
-        # Ground station ECEF in meters
-        gs_ecef = ground_station.to_ecef_position()
-        gs_ecef_arr = np.array([gs_ecef.x, gs_ecef.y, gs_ecef.z])
-
-        # Topocentric vector from ground station to satellite (meters)
-        topo = sat_ecef_arr - gs_ecef_arr
-        rng = np.linalg.norm(topo)
-        if rng == 0:
-            return -90.0, 0.0
-
-        # Convert station lat/lon to radians
-        lat = np.deg2rad(ground_station.latitude_deg)
-        lon = np.deg2rad(ground_station.longitude_deg)
-
-        # ECEF -> ENU (east, north, up) for the topocentric vector
-        dx, dy, dz = topo
-        east = -np.sin(lon) * dx + np.cos(lon) * dy
-        north = (
-            -np.sin(lat) * np.cos(lon) * dx
-            - np.sin(lat) * np.sin(lon) * dy
-            + np.cos(lat) * dz
-        )
-        up = (
-            np.cos(lat) * np.cos(lon) * dx
-            + np.cos(lat) * np.sin(lon) * dy
-            + np.sin(lat) * dz
-        )
-
-        # Elevation using required formula: elevation = arcsin(up / range)
-        elevation_rad = np.arcsin(np.clip(up / rng, -1.0, 1.0))
-        elevation = float(np.degrees(elevation_rad))
-
-        # Azimuth using required formula: arctan2(east, north) -> range 0-360
-        az_rad = np.arctan2(east, north)
-        azimuth = float(np.degrees(az_rad)) % 360.0
-
-        return elevation, azimuth
-
-    def satellite_eci_to_ecef(
-        self,
-        satellite_position: Position3D,
-        timestamp: Time,
-    ) -> Position3D:
-        """
-        Convert satellite ECI to ECEF coordinates in meters.
-
-        Returns:
-            Position3D with x, y, z in meters (ECEF)
-        """
-        # Handle units: OrbitalMechanics returns positions in km (ECI).
-        # If coordinate system indicates ECI/GCRS we treat values as km.
-        # Heuristic: if coordinates are large (>> Earth's radius) they're likely meters,
-        # otherwise treat them as km. This handles tests that construct
-        # ECEF-like vectors
-        # but label them as ECI.
-        coords_abs_max = max(
-            abs(satellite_position.x),
-            abs(satellite_position.y),
-            abs(satellite_position.z),
-        )
-        if getattr(satellite_position, "coordinate_system", "").upper() in (
-            "ECI",
-            "GCRS",
-        ):
-            if coords_abs_max > 1e5:
-                unit = u.m
-            else:
-                unit = u.km
-        else:
-            unit = u.m
-
-        # Create CartesianRepresentation in GCRS (ECI) frame with correct units
-        cartrep = coord.CartesianRepresentation(
-            x=satellite_position.x * unit,
-            y=satellite_position.y * unit,
-            z=satellite_position.z * unit,
-        )
-        gcrs = coord.GCRS(cartrep, obstime=timestamp)
-
-        # Transform to ITRS (ECEF)
-        itrs = gcrs.transform_to(coord.ITRS(obstime=timestamp))
-
-        # Convert to meters for consistency
-        x = itrs.x.to(u.m).value
-        y = itrs.y.to(u.m).value
-        z = itrs.z.to(u.m).value
-
-        # Return ECEF Cartesian coordinates (meters)
-        return Position3D(x, y, z, coordinate_system="ECEF")
-
-    def calculate_range(
-        self,
-        satellite_position: Position3D,
-        ground_station: GroundStation,
-        timestamp: Time,
-    ) -> float:
-        """
-        Calculate range (distance) from ground station to satellite
-
-        Args:
-            satellite_position: Satellite position in ECI coordinates
-            ground_station: Ground station configuration
-            timestamp: Time for coordinate conversion
-
-        Returns:
-            Range in meters
-
-        Calculate Euclidean distance between satellite and ground station
-        """
-        satellite_coordinates = self.satellite_eci_to_ecef(
-            satellite_position, timestamp
-        )
-
-        # ground station geodetic to ECEF
-        ground_station_coordinates = ground_station.to_ecef_position()
-
-        # calculate euclidian distance (magnitude of range vector
-        x_dist = (satellite_coordinates.x - ground_station_coordinates.x) ** 2
-        y_dist = (satellite_coordinates.y - ground_station_coordinates.y) ** 2
-        z_dist = (satellite_coordinates.z - ground_station_coordinates.z) ** 2
-        return np.sqrt(x_dist + y_dist + z_dist)
-
-    def is_visible(
-        self,
-        satellite_position: Position3D,
-        ground_station: GroundStation,
-        timestamp: Time,
-    ) -> bool:
-        """
-        Check if satellite is visible from ground station
-
-        Args:
-            satellite_position: Satellite position in ECI coordinates
-            ground_station: Ground station configuration
-            timestamp: Time for coordinate conversion
-
-        Returns:
-            True if satellite is above minimum elevation
-
-        Use elevation angle calculation and compare with minimum elevation
-        """
-        # get elevation and azimuth
-        elevation, azimuth = self.calculate_elevation_azimuth(
-            satellite_position, ground_station, timestamp
-        )
-
-        return elevation > ground_station.min_elevation_deg
-
-    def calculate_contact_quality(
-        self,
-        satellite_position: Position3D,
-        satellite_velocity: Velocity3D,
-        ground_station: GroundStation,
-        timestamp: Time,
-    ) -> ContactQuality:
-        """
-        Calculate detailed contact quality metrics
-
-        Args:
-            satellite_position: Satellite position in ECI
-            satellite_velocity: Satellite velocity in ECI
-            ground_station: Ground station configuration
-            timestamp: Time for calculations
-
-        Returns:
-            ContactQuality with elevation, azimuth, range, data rate,
-            signal strength, and Doppler shift.
-        """
-
-        # Constants
-        c = 3e8  # Speed of light (m/s)
-        frequency_hz = 2.2e9  # S-band (example)
-        omega_earth = 7.2921159e-5  # Earth's rotation rate (rad/s)
-
-        # Elevation & Azimuth
-        elevation, azimuth = self.calculate_elevation_azimuth(
-            satellite_position, ground_station, timestamp
-        )
-
-        # Range (in meters)
-        slant_range_m = self.calculate_range(
-            satellite_position, ground_station, timestamp
-        )
-        slant_range_km = slant_range_m / 1000.0
-
-        # Convert to ECEF for Doppler calculations
-        sat_ecef = self.satellite_eci_to_ecef(satellite_position, timestamp)
-        gs_ecef = ground_station.to_ecef_position()
-
-        # Convert Position3D objects to numeric arrays (meters)
-        sat_ecef_arr = np.array([sat_ecef.x, sat_ecef.y, sat_ecef.z])
-        gs_ecef_arr = np.array([gs_ecef.x, gs_ecef.y, gs_ecef.z])
-
-        # Ground station rotational velocity in ECEF
-        omega_vec = np.array([0.0, 0.0, omega_earth])
-        v_gs_ecef = np.cross(omega_vec, gs_ecef_arr)
-
-        # Satellite ECI → ECEF velocity transformation (approximate)
-        # (assume provided velocity is in ECI km/s or m/s depending on source)
-        v_sat_eci = np.array(
-            [satellite_velocity.vx, satellite_velocity.vy, satellite_velocity.vz]
-        )
-        # If velocity likely in km/s (orbital mechanics), convert to m/s
-        # when positions are in meters
-        if abs(v_sat_eci).max() < 1000:
-            # assume km/s -> convert to m/s
-            v_sat_eci = v_sat_eci * 1000.0
-
-        v_sat_ecef = v_sat_eci - np.cross(omega_vec, sat_ecef_arr)
-
-        # Relative position and velocity
-        rel_pos = sat_ecef_arr - gs_ecef_arr
-        rel_vel = v_sat_ecef - v_gs_ecef
-
-        # Line-of-sight unit vector
-        los_unit = rel_pos / np.linalg.norm(rel_pos)
-
-        # Radial velocity (positive if moving away)
-        v_radial = np.dot(rel_vel, los_unit)
-        v_radial_approach = -v_radial  # positive = approaching
-
-        # Doppler shift
-        doppler_shift_hz = (v_radial_approach / c) * frequency_hz
-
-        # Signal strength estimation (Free-space path loss)
-        # FSPL(dB) = 20*log10(d_km) + 20*log10(f_MHz) + 32.44
-        d_km = max(slant_range_km, 1e-3)  # prevent log(0)
-        f_mhz = frequency_hz / 1e6
-        fspl_db = 20 * np.log10(d_km) + 20 * np.log10(f_mhz) + 32.44
-
-        # Normalize to approximate signal level (arbitrary but bounded)
-        signal_strength_db = -fspl_db + 200 * np.cos(np.radians(90 - elevation))
-
-        #  Data rate model — proportional to elevation and signal strength
-        if elevation > 0:
-            data_rate_mbps = max(
-                0.0, min(100.0, (signal_strength_db + 50) * (elevation / 90))
-            )
-        else:
-            data_rate_mbps = 0.0
-
-        return ContactQuality(
-            elevation_deg=elevation,
-            azimuth_deg=azimuth,
-            range_km=slant_range_km,
-            data_rate_mbps=data_rate_mbps,
-            signal_strength_db=signal_strength_db,
-            doppler_shift_hz=doppler_shift_hz,
-        )
-
-    def predict_contact_windows(
-        self,
-        satellite_elements: OrbitalElements,
-        satellite_id: str,
-        ground_station_name: str,
-        start_time: float,
+        satellites: Dict[str, KeplerianElements],
+        ground_stations: Dict[str, GroundStation],
+        start_time: datetime,
         duration_hours: float,
-        time_step_seconds: float = 60,
+        time_step_seconds: float = 60.0
     ) -> List[ContactWindow]:
-        """
-        Predict all contact windows between satellite and ground station
-
-        Args:
-            satellite_elements: Satellite orbital elements
-            satellite_id: Unique satellite identifier
-            ground_station_name: Name of ground station
-            start_time: Start time for prediction (Unix timestamp)
-            duration_hours: Prediction duration in hours
-            time_step_seconds: Time step for calculations
-
-        Returns:
-            List of ContactWindow objects
-
-        Steps:
-        1. Loop through time with specified time step
-        2. Propagate satellite orbit at each time step
-        3. Check visibility from ground station
-        4. Identify contact start/end times
-        5. Calculate contact quality metrics
-        6. Create ContactWindow objects
-        """
-        contact_windows: List[ContactWindow] = []
-        t = start_time
-        end_time = start_time + duration_hours * 3600
-        in_contact = False
-        contact_start: Optional[float] = None
-        max_elevation = 0.0
-        total_range = 0.0
-        num_steps = 0
-
-        # constants (use km units consistent with OrbitalMechanics)
-        MU_EARTH = OrbitalMechanics.EARTH_MU  # km^3/s^2
-
-        # unpack orbital elements (keep km)
-        a = satellite_elements.semi_major_axis  # km
-        e = satellite_elements.eccentricity
-        i = np.radians(satellite_elements.inclination)
-        raan = np.radians(satellite_elements.raan)
-        argp = np.radians(satellite_elements.arg_perigee)
-        nu0 = np.radians(satellite_elements.true_anomaly)
-
-        # ground station object
-        gs = self.ground_stations[ground_station_name]
-
-        # mean motion
-        n = np.sqrt(MU_EARTH / a**3)
-
-        while t <= end_time:
-
-            # Reduce time step for polar stations
-            step = time_step_seconds
-            if abs(gs.latitude_deg) > 70:
-                step = min(10, time_step_seconds)  # fine steps for high latitude
-
-            timestamp = Time(t, format="unix")  # convert float to astropy Time
-
-            dt = t - start_time  # seconds since start
-
-            # --- Kepler propagation ---
-            E0 = 2 * np.arctan(np.tan(nu0 / 2) * np.sqrt((1 - e) / (1 + e)))
-            M0 = E0 - e * np.sin(E0)
-            M = M0 + n * dt
-
-            # solve Kepler's equation iteratively
-            E = M
-            for _ in range(15):
-                E = M + e * np.sin(E)
-
-            # true anomaly and radius
-            nu = 2 * np.arctan2(
-                np.sqrt(1 + e) * np.sin(E / 2), np.sqrt(1 - e) * np.cos(E / 2)
-            )
-            r_mag = a * (1 - e * np.cos(E))
-
-            # perifocal frame (positions in km)
-            r_pf = np.array([r_mag * np.cos(nu), r_mag * np.sin(nu), 0])
-            v_pf = (
-                np.sqrt(MU_EARTH / a)
-                / (1 - e * np.cos(E))
-                * np.array([-np.sin(E), np.sqrt(1 - e**2) * np.cos(E), 0])
-            )
-
-            # rotation to ECI
-            cosO, sinO = np.cos(raan), np.sin(raan)
-            cosi, sini = np.cos(i), np.sin(i)
-            cosw, sinw = np.cos(argp), np.sin(argp)
-
-            R = np.array(
-                [
-                    [
-                        cosO * cosw - sinO * sinw * cosi,
-                        -cosO * sinw - sinO * cosw * cosi,
-                        sinO * sini,
-                    ],
-                    [
-                        sinO * cosw + cosO * sinw * cosi,
-                        -sinO * sinw + cosO * cosw * cosi,
-                        -cosO * sini,
-                    ],
-                    [sinw * sini, cosw * sini, cosi],
-                ]
-            )
-
-            r_eci = R @ r_pf
-            v_eci = R @ v_pf
-
-            # r_eci and v_eci are in km and km/s respectively
-            satellite_position = Position3D(
-                r_eci[0], r_eci[1], r_eci[2], coordinate_system="ECI"
-            )
-            satellite_velocity = Velocity3D(
-                v_eci[0], v_eci[1], v_eci[2], coordinate_system="ECI"
-            )
-
-            # --- Visibility check ---
-            elevation, _ = self.calculate_elevation_azimuth(
-                satellite_position, gs, timestamp
-            )
-
-            # Check for contact start
-            if not in_contact and elevation >= gs.min_elevation_deg:
-                in_contact = True
-                contact_start = t
-                max_elevation = elevation
-                total_range = (
-                    self.calculate_range(satellite_position, gs, timestamp) / 1e3
+        """Predict all contact windows in the given time period."""
+        
+        contacts = []
+        end_time = start_time + timedelta(hours=duration_hours)
+        current_time = start_time
+        
+        # Track ongoing contacts
+        active_contacts: Dict[str, Dict] = {}
+        
+        while current_time <= end_time:
+            # Update satellite positions
+            sat_states = {}
+            for sat_id, elements in satellites.items():
+                sat_states[sat_id] = self.orbital_mechanics.propagate_orbit(
+                    elements, current_time
                 )
-                num_steps = 1
-
-            # Update contact while visible
-            elif in_contact and elevation >= gs.min_elevation_deg:
-                max_elevation = max(max_elevation, elevation)
-                total_range += (
-                    self.calculate_range(satellite_position, gs, timestamp) / 1e3
-                )
-                num_steps += 1
-
-            # Contact ended
-            elif in_contact and elevation < gs.min_elevation_deg:
-                if contact_start is not None:
-                    contact_end = t
-                    avg_range = total_range / num_steps if num_steps > 0 else 0
-                    duration_sec = contact_end - contact_start
-                    mid_time = contact_start + duration_sec / 2
-                    mid_timestamp = Time(mid_time, format="unix")
-
-                    quality = self.calculate_contact_quality(
-                        satellite_position, satellite_velocity, gs, mid_timestamp
+            
+            # Check satellite-to-ground contacts
+            for sat_id, sat_state in sat_states.items():
+                for gs_id, ground_station in ground_stations.items():
+                    contact_key = f"{sat_id}_{gs_id}"
+                    
+                    # Calculate visibility
+                    elevation, azimuth, range_km = self.orbital_mechanics.calculate_contact_geometry(
+                        sat_state,
+                        ground_station.position.latitude,
+                        ground_station.position.longitude,
+                        ground_station.position.altitude
                     )
-
-                    contact_windows.append(
-                        ContactWindow(
-                            satellite_id=satellite_id,
-                            ground_station=ground_station_name,
-                            start_time=contact_start,
-                            end_time=contact_end,
-                            duration_seconds=duration_sec,
-                            max_elevation_deg=max_elevation,
-                            max_data_rate_mbps=quality.data_rate_mbps,
-                            average_range_km=avg_range,
-                        )
-                    )
-
-                    in_contact = False
-
-            t += step
-
-        # If loop ended while still in contact, close the window at end_time
-        if in_contact and contact_start is not None:
-            contact_end = end_time
-            avg_range = total_range / num_steps if num_steps > 0 else 0
-            duration_sec = contact_end - contact_start
-            mid_time = contact_start + duration_sec / 2
-            mid_timestamp = Time(mid_time, format="unix")
-
-            quality = self.calculate_contact_quality(
-                satellite_position,
-                satellite_velocity,
-                gs,
-                mid_timestamp,
+                    
+                    # Check if contact is possible
+                    if (elevation >= ground_station.elevation_mask and 
+                        range_km <= ground_station.max_range):
+                        
+                        # Calculate data rate
+                        data_rate = self.link_budget.calculate_data_rate(range_km, elevation)
+                        
+                        if data_rate > 0:
+                            if contact_key not in active_contacts:
+                                # New contact starting
+                                active_contacts[contact_key] = {
+                                    'start_time': current_time,
+                                    'max_elevation': elevation,
+                                    'max_range': range_km,
+                                    'max_data_rate': data_rate,
+                                    'sat_id': sat_id,
+                                    'gs_id': gs_id
+                                }
+                            else:
+                                # Update ongoing contact
+                                if elevation > active_contacts[contact_key]['max_elevation']:
+                                    active_contacts[contact_key]['max_elevation'] = elevation
+                                if data_rate > active_contacts[contact_key]['max_data_rate']:
+                                    active_contacts[contact_key]['max_data_rate'] = data_rate
+                    else:
+                        # Contact ended or not possible
+                        if contact_key in active_contacts:
+                            # End the contact
+                            contact_info = active_contacts[contact_key]
+                            
+                            contact = ContactWindow(
+                                contact_id=f"contact_{len(contacts):06d}",
+                                source_id=contact_info['sat_id'],
+                                target_id=contact_info['gs_id'],
+                                start_time=contact_info['start_time'],
+                                end_time=current_time,
+                                max_elevation=contact_info['max_elevation'],
+                                max_range=contact_info['max_range'],
+                                data_rate=contact_info['max_data_rate']
+                            )
+                            contacts.append(contact)
+                            del active_contacts[contact_key]
+            
+            # Check satellite-to-satellite contacts
+            sat_list = list(sat_states.items())
+            for i, (sat1_id, sat1_state) in enumerate(sat_list):
+                for j, (sat2_id, sat2_state) in enumerate(sat_list[i+1:], i+1):
+                    contact_key = f"{sat1_id}_{sat2_id}"
+                    
+                    # Calculate inter-satellite distance
+                    dx = sat1_state.position.x - sat2_state.position.x
+                    dy = sat1_state.position.y - sat2_state.position.y
+                    dz = sat1_state.position.z - sat2_state.position.z
+                    distance = math.sqrt(dx**2 + dy**2 + dz**2)
+                    
+                    # Check if satellites can communicate (simplified)
+                    max_isl_range = 5000.0  # km, typical for inter-satellite links
+                    
+                    if distance <= max_isl_range:
+                        # Calculate data rate for ISL
+                        isl_data_rate = self._calculate_isl_data_rate(distance)
+                        
+                        if isl_data_rate > 0:
+                            if contact_key not in active_contacts:
+                                # New ISL contact
+                                active_contacts[contact_key] = {
+                                    'start_time': current_time,
+                                    'max_elevation': 90.0,  # Not applicable for ISL
+                                    'max_range': distance,
+                                    'max_data_rate': isl_data_rate,
+                                    'sat_id': sat1_id,
+                                    'gs_id': sat2_id
+                                }
+                            else:
+                                # Update ISL contact
+                                if isl_data_rate > active_contacts[contact_key]['max_data_rate']:
+                                    active_contacts[contact_key]['max_data_rate'] = isl_data_rate
+                    else:
+                        # ISL contact ended
+                        if contact_key in active_contacts:
+                            contact_info = active_contacts[contact_key]
+                            
+                            contact = ContactWindow(
+                                contact_id=f"isl_contact_{len(contacts):06d}",
+                                source_id=contact_info['sat_id'],
+                                target_id=contact_info['gs_id'],
+                                start_time=contact_info['start_time'],
+                                end_time=current_time,
+                                max_elevation=contact_info['max_elevation'],
+                                max_range=contact_info['max_range'],
+                                data_rate=contact_info['max_data_rate']
+                            )
+                            contacts.append(contact)
+                            del active_contacts[contact_key]
+            
+            current_time += timedelta(seconds=time_step_seconds)
+        
+        # Close any remaining active contacts
+        for contact_key, contact_info in active_contacts.items():
+            contact = ContactWindow(
+                contact_id=f"final_contact_{len(contacts):06d}",
+                source_id=contact_info['sat_id'],
+                target_id=contact_info['gs_id'],
+                start_time=contact_info['start_time'],
+                end_time=end_time,
+                max_elevation=contact_info['max_elevation'],
+                max_range=contact_info['max_range'],
+                data_rate=contact_info['max_data_rate']
             )
-
-            contact_windows.append(
-                ContactWindow(
-                    satellite_id=satellite_id,
-                    ground_station=ground_station_name,
-                    start_time=contact_start,
-                    end_time=contact_end,
-                    duration_seconds=duration_sec,
-                    max_elevation_deg=max_elevation,
-                    max_data_rate_mbps=quality.data_rate_mbps,
-                    average_range_km=avg_range,
-                )
-            )
-
-        return contact_windows
-
-    def predict_all_contacts(
+            contacts.append(contact)
+        
+        return contacts
+    
+    def _calculate_isl_data_rate(self, distance_km: float) -> float:
+        """Calculate inter-satellite link data rate."""
+        # Simplified ISL model - Ka-band typical
+        if distance_km <= 5000:
+            # Higher data rate for closer satellites
+            base_rate = 1000.0  # Mbps
+            return base_rate * (5000 / distance_km)**2
+        else:
+            return 0.0
+    
+    def get_active_contacts(
+        self, 
+        contacts: List[ContactWindow], 
+        current_time: datetime
+    ) -> List[ContactWindow]:
+        """Get contacts that are active at the current time."""
+        active = []
+        for contact in contacts:
+            if contact.start_time <= current_time <= contact.end_time:
+                active.append(contact)
+        return active
+    
+    def get_future_contacts(
         self,
-        constellation: List[Tuple[OrbitalElements, str]],
-        start_time: float,
-        duration_hours: float,
-    ) -> Dict[str, List[ContactWindow]]:
-        """
-        Predict contacts for entire constellation with all ground stations
-
-        Args:
-            constellation: List of (orbital_elements, satellite_id) tuples
-            start_time: Start time for prediction
-            duration_hours: Prediction duration in hours
-
-        Returns:
-            Dictionary mapping ground_station_name to list of ContactWindows
-
-        TODO: Implement constellation-wide contact prediction
-        Efficiently calculate contacts for all satellite-ground station pairs
-        """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement constellation contact prediction")
-
-    def get_current_contacts(
-        self, constellation: List[Tuple[OrbitalElements, str]], current_time: float
-    ) -> Dict[str, List[str]]:
-        """
-        Get currently active contacts between satellites and ground stations
-
-        Args:
-            constellation: List of (orbital_elements, satellite_id) tuples
-            current_time: Current time (Unix timestamp)
-
-        Returns:
-            Dictionary mapping ground_station_name to list of visible satellite_ids
-
-        TODO: Implement real-time contact checking
-        Quickly determine which satellites are currently visible from each station
-        """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement real-time contact checking")
-
-
-class ContactScheduler:
-    """Schedules and manages contact windows for DTN routing"""
-
-    def __init__(self, contact_predictor: ContactPredictor):
-        """Initialize contact scheduler"""
-        self.contact_predictor = contact_predictor
-        self.scheduled_contacts: Dict[str, List[ContactWindow]] = {}
-
-    def schedule_contacts(
+        contacts: List[ContactWindow],
+        current_time: datetime,
+        lookahead_hours: float = 24.0
+    ) -> List[ContactWindow]:
+        """Get future contacts within the lookahead window."""
+        future_cutoff = current_time + timedelta(hours=lookahead_hours)
+        future = []
+        
+        for contact in contacts:
+            if current_time < contact.start_time <= future_cutoff:
+                future.append(contact)
+        
+        return sorted(future, key=lambda c: c.start_time)
+    
+    def calculate_contact_statistics(
         self,
-        constellation: List[Tuple[OrbitalElements, str]],
-        start_time: float,
-        duration_hours: float,
-    ) -> None:
-        """
-        Schedule all contacts for constellation
+        contacts: List[ContactWindow],
+        node_id: str
+    ) -> Dict[str, float]:
+        """Calculate contact statistics for a node."""
+        
+        node_contacts = [
+            c for c in contacts 
+            if c.source_id == node_id or c.target_id == node_id
+        ]
+        
+        if not node_contacts:
+            return {
+                'total_contacts': 0,
+                'total_contact_time': 0.0,
+                'average_contact_duration': 0.0,
+                'contact_frequency': 0.0,
+                'coverage_percentage': 0.0
+            }
+        
+        total_time = sum(c.duration_seconds for c in node_contacts)
+        avg_duration = total_time / len(node_contacts)
+        
+        # Calculate coverage percentage over 24 hours
+        if contacts:
+            time_span = max(c.end_time for c in contacts) - min(c.start_time for c in contacts)
+            coverage_percentage = (total_time / time_span.total_seconds()) * 100
+        else:
+            coverage_percentage = 0.0
+        
+        return {
+            'total_contacts': len(node_contacts),
+            'total_contact_time': total_time,
+            'average_contact_duration': avg_duration,
+            'contact_frequency': len(node_contacts) / 24.0,  # contacts per hour
+            'coverage_percentage': coverage_percentage
+        }
+    
+    def optimize_contact_plan(
+        self,
+        contacts: List[ContactWindow],
+        priority_nodes: List[str] = None
+    ) -> List[ContactWindow]:
+        """Optimize contact plan to avoid conflicts and maximize throughput."""
+        
+        # Sort contacts by start time
+        sorted_contacts = sorted(contacts, key=lambda c: c.start_time)
+        optimized_contacts = []
+        
+        # Simple greedy algorithm to avoid conflicts
+        # In production, would use more sophisticated optimization
+        
+        active_nodes = set()
+        
+        for contact in sorted_contacts:
+            # Check if either node is already busy
+            if contact.source_id not in active_nodes and contact.target_id not in active_nodes:
+                optimized_contacts.append(contact)
+                active_nodes.add(contact.source_id)
+                active_nodes.add(contact.target_id)
+                
+                # Schedule node release
+                # (In real implementation, would use proper event scheduling)
+        
+        return optimized_contacts
 
-        Args:
-            constellation: List of (orbital_elements, satellite_id) tuples
-            start_time: Schedule start time
-            duration_hours: Schedule duration
 
-        TODO: Implement contact scheduling
-        Generate complete contact schedule for DTN routing algorithms
-        """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement contact scheduling")
-
-    def get_next_contact(
-        self, satellite_id: str, ground_station: str, after_time: float
-    ) -> Optional[ContactWindow]:
-        """
-        Get next contact window for satellite-ground station pair
-
-        Args:
-            satellite_id: Satellite identifier
-            ground_station: Ground station name
-            after_time: Find contacts after this time
-
-        Returns:
-            Next ContactWindow or None if no contacts found
-
-        TODO: Implement next contact lookup
-        Efficiently find upcoming contact windows for routing decisions
-        """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement next contact lookup")
-
-    def export_contact_plan_csv(self, filename: str) -> None:
-        """
-        Export contact plan to CSV format for external tools
-
-        Args:
-            filename: Output CSV filename
-
-        TODO: Implement CSV export
-        Create CSV with columns: start_time, end_time, satellite_id, ground_station,
-                                 duration, max_elevation, data_rate
-        """
-        # TODO: Implement this function
-        raise NotImplementedError("Pair 2: Implement CSV contact plan export")
-
-
-# Preset ground station configurations
-PRESET_GROUND_STATIONS = {
-    "svalbard": GroundStation(
-        name="Svalbard",
-        latitude_deg=78.92,
-        longitude_deg=11.93,
-        altitude_m=78,
-        min_elevation_deg=5.0,
-        antenna_diameter_m=32,
-        max_data_rate_mbps=150,
-    ),
-    "alaska": GroundStation(
-        name="Alaska_Fairbanks",
-        latitude_deg=64.86,
-        longitude_deg=-147.85,
-        altitude_m=200,
-        min_elevation_deg=10.0,
-        antenna_diameter_m=12,
-        max_data_rate_mbps=50,
-    ),
-    "australia": GroundStation(
-        name="Australia_Alice",
-        latitude_deg=-23.70,
-        longitude_deg=133.88,
-        altitude_m=545,
-        min_elevation_deg=10.0,
-        antenna_diameter_m=15,
-        max_data_rate_mbps=75,
-    ),
-    "chile": GroundStation(
-        name="Chile_Santiago",
-        latitude_deg=-33.45,
-        longitude_deg=-70.67,
-        altitude_m=520,
-        min_elevation_deg=10.0,
-        antenna_diameter_m=18,
-        max_data_rate_mbps=80,
-    ),
-}
-if __name__ == "__main__":
-    unix_timestamp = 1678886400  # March 15, 2023, 00:00:00 UTC
-    local_datetime_object = datetime.fromtimestamp(unix_timestamp, timezone.utc)
-    t = Time(local_datetime_object)
-    print(f"Local datetime: {t}  {local_datetime_object}")
-
-# Example usage and test cases
-if __name__ == "__min__":
-    """
-    Example usage for testing implementations
-    Run this after implementing the TODO functions
-    """
-
-    # Initialize components
-    orbital_calc = OrbitalMechanics()
-    contact_pred = ContactPredictor(orbital_calc)
-
-    # Add ground stations
-    for station in PRESET_GROUND_STATIONS.values():
-        contact_pred.add_ground_station(station)
-
-    # Example satellite (ISS-like orbit)
-    satellite_elements = OrbitalElements(
-        semi_major_axis=6793.0,
-        eccentricity=0.0003,
-        inclination=51.6,
-        raan=180.0,
-        arg_perigee=90.0,
-        true_anomaly=0.0,
-        epoch=time.time(),
-    )
-
-    try:
-        # Test contact window prediction
-        current_time = time.time()
-        contacts = contact_pred.predict_contact_windows(
-            satellite_elements,
-            "ISS_TEST",
-            "svalbard",
-            current_time,
-            24.0,  # 24 hours
+def create_major_cities_ground_stations() -> Dict[str, GroundStation]:
+    """Create comprehensive ground station database for major global cities."""
+    
+    # Major global cities with strategic DTN coverage
+    cities_data = {
+        # North America
+        'gs_new_york': {'name': 'New York', 'lat': 40.7128, 'lon': -74.0060, 'alt': 0.010},
+        'gs_los_angeles': {'name': 'Los Angeles', 'lat': 34.0522, 'lon': -118.2437, 'alt': 0.100},
+        'gs_chicago': {'name': 'Chicago', 'lat': 41.8781, 'lon': -87.6298, 'alt': 0.180},
+        'gs_toronto': {'name': 'Toronto', 'lat': 43.6532, 'lon': -79.3832, 'alt': 0.076},
+        'gs_mexico_city': {'name': 'Mexico City', 'lat': 19.4326, 'lon': -99.1332, 'alt': 2.240},
+        
+        # South America
+        'gs_sao_paulo': {'name': 'São Paulo', 'lat': -23.5505, 'lon': -46.6333, 'alt': 0.760},
+        'gs_buenos_aires': {'name': 'Buenos Aires', 'lat': -34.6037, 'lon': -58.3816, 'alt': 0.025},
+        'gs_bogota': {'name': 'Bogotá', 'lat': 4.7110, 'lon': -74.0721, 'alt': 2.625},
+        
+        # Europe
+        'gs_london': {'name': 'London', 'lat': 51.5074, 'lon': -0.1278, 'alt': 0.035},
+        'gs_paris': {'name': 'Paris', 'lat': 48.8566, 'lon': 2.3522, 'alt': 0.035},
+        'gs_berlin': {'name': 'Berlin', 'lat': 52.5200, 'lon': 13.4050, 'alt': 0.034},
+        'gs_rome': {'name': 'Rome', 'lat': 41.9028, 'lon': 12.4964, 'alt': 0.021},
+        'gs_madrid': {'name': 'Madrid', 'lat': 40.4168, 'lon': -3.7038, 'alt': 0.650},
+        'gs_moscow': {'name': 'Moscow', 'lat': 55.7558, 'lon': 37.6173, 'alt': 0.156},
+        
+        # Asia-Pacific
+        'gs_tokyo': {'name': 'Tokyo', 'lat': 35.6762, 'lon': 139.6503, 'alt': 0.040},
+        'gs_beijing': {'name': 'Beijing', 'lat': 39.9042, 'lon': 116.4074, 'alt': 0.043},
+        'gs_shanghai': {'name': 'Shanghai', 'lat': 31.2304, 'lon': 121.4737, 'alt': 0.004},
+        'gs_mumbai': {'name': 'Mumbai', 'lat': 19.0760, 'lon': 72.8777, 'alt': 0.014},
+        'gs_delhi': {'name': 'Delhi', 'lat': 28.7041, 'lon': 77.1025, 'alt': 0.216},
+        'gs_singapore': {'name': 'Singapore', 'lat': 1.3521, 'lon': 103.8198, 'alt': 0.015},
+        'gs_seoul': {'name': 'Seoul', 'lat': 37.5665, 'lon': 126.9780, 'alt': 0.038},
+        'gs_sydney': {'name': 'Sydney', 'lat': -33.8688, 'lon': 151.2093, 'alt': 0.058},
+        'gs_melbourne': {'name': 'Melbourne', 'lat': -37.8136, 'lon': 144.9631, 'alt': 0.031},
+        
+        # Middle East & Africa
+        'gs_dubai': {'name': 'Dubai', 'lat': 25.2048, 'lon': 55.2708, 'alt': 0.005},
+        'gs_cairo': {'name': 'Cairo', 'lat': 30.0444, 'lon': 31.2357, 'alt': 0.074},
+        'gs_johannesburg': {'name': 'Johannesburg', 'lat': -26.2041, 'lon': 28.0473, 'alt': 1.753},
+        'gs_nairobi': {'name': 'Nairobi', 'lat': -1.2921, 'lon': 36.8219, 'alt': 1.795},
+        
+        # Polar and Remote Regions (Strategic for satellite coverage)
+        'gs_reykjavik': {'name': 'Reykjavik', 'lat': 64.1466, 'lon': -21.9426, 'alt': 0.028},
+        'gs_anchorage': {'name': 'Anchorage', 'lat': 61.2181, 'lon': -149.9003, 'alt': 0.040},
+        'gs_stockholm': {'name': 'Stockholm', 'lat': 59.3293, 'lon': 18.0686, 'alt': 0.028}
+    }
+    
+    stations = {}
+    for station_id, data in cities_data.items():
+        stations[station_id] = GroundStation(
+            station_id=station_id,
+            name=data['name'],
+            position=GeodeticPosition(data['lat'], data['lon'], data['alt']),
+            elevation_mask=10.0,  # Standard 10° minimum elevation
+            max_range=2000.0,     # 2000 km maximum range
+            antenna_gain=45.0,    # High-gain antenna
+            power=1000.0          # 1kW transmitter
         )
-        print(f"Predicted {len(contacts)} contact windows with Svalbard station")
+    
+    return stations
 
-        # Test visibility check
-        state = orbital_calc.propagate_orbit(satellite_elements, current_time)
-        visible = contact_pred.is_visible(
-            state.position, PRESET_GROUND_STATIONS["svalbard"], current_time
-        )
-        print(f"ISS currently visible from Svalbard: {visible}")
 
-    except NotImplementedError as e:
-        print(f"Function not yet implemented: {e}")
+def create_default_ground_stations() -> Dict[str, GroundStation]:
+    """Create default ground stations (backwards compatibility)."""
+    all_stations = create_major_cities_ground_stations()
+    # Return subset for basic testing
+    return {
+        'gs_los_angeles': all_stations['gs_los_angeles'],
+        'gs_tokyo': all_stations['gs_tokyo'],
+        'gs_london': all_stations['gs_london'],
+        'gs_sydney': all_stations['gs_sydney']
+    }

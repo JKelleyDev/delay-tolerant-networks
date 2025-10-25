@@ -1,0 +1,11 @@
+satellite_id,name,altitude,inclination,raan,eccentricity,arg_perigee,mean_anomaly
+sat_001,Test Satellite 1,550,53.0,0,0,0,0
+sat_002,Test Satellite 2,550,53.0,0,0,0,60
+sat_003,Test Satellite 3,550,53.0,0,0,0,120
+sat_004,Test Satellite 4,550,53.0,0,0,0,180
+sat_005,Test Satellite 5,550,53.0,0,0,0,240
+sat_006,Test Satellite 6,550,53.0,0,0,0,300
+sat_007,Test Satellite 7,550,53.0,120,0,0,0
+sat_008,Test Satellite 8,550,53.0,120,0,0,60
+sat_009,Test Satellite 9,550,53.0,120,0,0,120
+sat_010,Test Satellite 10,550,53.0,120,0,0,180

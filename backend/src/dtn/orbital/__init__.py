@@ -1,1 +1,1 @@
-"""Orbital mechanics and satellite mobility components."""
+"""Orbital mechanics and satellite mobility package."""

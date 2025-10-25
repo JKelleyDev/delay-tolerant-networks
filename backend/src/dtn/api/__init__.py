@@ -1,1 +1,1 @@
-"""API module for DTN simulation web interface."""
+"""API package for DTN Simulator."""

@@ -1,401 +1,306 @@
-# Delay Tolerant Networks (DTN) Simulator
+# DTN Simulator - Satellite Network Communication Simulator
 
-**Project Groups 3&7 - Advanced DTN Implementation with Satellite Communications**
+**A comprehensive Delay-Tolerant Network (DTN) simulator for satellite communications with realistic orbital mechanics, advanced routing algorithms, and real-time 3D visualization.**
 
-A comprehensive DTN simulator implementing satellite communication networks with proper OSI model abstraction, comprehensive routing algorithms, and real-time 3D visualization. Built for academic research and network performance analysis.
+![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)
+![React](https://img.shields.io/badge/react-v18.2+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ## 🎯 Project Overview
 
-### Core Mission
-Design and implement a production-quality DTN simulator that demonstrates mastery of:
-- **Complete OSI Model Implementation** - All 7 layers from Physical through Application with clean abstraction
-- **Advanced DTN Protocols** - Multiple routing algorithms with performance comparison across network layers
-- **Satellite Network Modeling** - Realistic orbital mechanics and contact prediction for space communications
-- **Professional Software Engineering** - Enterprise-grade architecture and development practices
+This DTN simulator addresses the main points of the OSI model for satellite network communications, focusing on delay-tolerant networking protocols that can handle the intermittent connectivity and long delays characteristic of space communications.
 
-### Architecture Decision: **Satellite Communications** 🛰️
-We chose satellite communication over terrestrial (BLE/Wi-Fi Direct) to showcase:
-- Complex mobility models with orbital mechanics
-- Long-delay tolerance and store-and-forward optimization  
-- Advanced contact prediction algorithms
-- Real-world space communication challenges
+### Key Features
+
+- **🛰️ Realistic Orbital Mechanics**: SGP4/SDP4 propagation with accurate satellite positioning
+- **🌐 Multiple Constellation Support**: LEO, MEO, GEO, HEO, and custom constellations via CSV upload
+- **🔀 Advanced DTN Routing**: Epidemic, PRoPHET, Spray-and-Wait algorithms with performance comparison
+- **📡 Ground Station Network**: Global coverage with configurable elevation masks and antenna patterns
+- **🎮 3D Visualization**: Real-time satellite tracking with Earth globe and contact window display
+- **📊 Comprehensive Analytics**: Performance metrics, delivery ratios, and network analysis
+- **⚡ Real-time Simulation**: WebSocket-based live updates with time acceleration up to 10,000x
+
+## 🏗️ Architecture
+
+### Backend (Python + FastAPI)
+```
+backend/src/dtn/
+├── api/                    # REST API and WebSocket endpoints
+├── core/                   # Simulation engine and bundle protocol
+├── orbital/                # Orbital mechanics and contact prediction
+├── networking/             # DTN routing algorithms
+│   └── routing/           # Epidemic, PRoPHET, Spray-and-Wait
+├── analysis/              # Performance metrics and data collection
+└── data/                  # Data models and storage
+```
+
+### Frontend (React + Three.js)
+```
+frontend/src/
+├── components/            # UI components and 3D visualization
+├── pages/                # Main application views
+├── services/             # API communication and WebSocket handling
+├── hooks/                # React hooks for data management
+└── utils/                # Utilities and helpers
+```
 
 ## 🚀 Quick Start
 
+### Prerequisites
+
+- **Python 3.8+** with pip
+- **Node.js 18+** with npm
+- **Git** for version control
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/YourUsername/delay-tolerant-networks.git
+   cd delay-tolerant-networks
+   ```
+
+2. **Start the development environment**
+   ```bash
+   # Start both backend and frontend servers
+   ./scripts/start-dev.sh
+   ```
+
+   Or start servers individually:
+   ```bash
+   # Backend only (Terminal 1)
+   ./scripts/start-backend.sh
+   
+   # Frontend only (Terminal 2)
+   ./scripts/start-frontend.sh
+   ```
+
+3. **Access the application**
+   - **Frontend**: http://localhost:3000
+   - **API Documentation**: http://localhost:8000/docs
+   - **Health Check**: http://localhost:8000/health
+
+## 📋 Usage Guide
+
+### 1. Creating a Simulation
+
+1. **Choose a Constellation**
+   - Select from built-in constellations (Starlink, Kuiper, GPS, etc.)
+   - Or upload a custom constellation via CSV file
+
+2. **Configure Parameters**
+   - Routing algorithm (Epidemic, PRoPHET, Spray-and-Wait)
+   - Simulation duration and time step
+   - Ground stations and traffic patterns
+
+3. **Run Simulation**
+   - Start/pause/stop controls
+   - Real-time metrics dashboard
+   - 3D visualization with satellite tracking
+
+### 2. Uploading Custom Constellations
+
+Create a CSV file with the following format:
+```csv
+satellite_id,name,altitude,inclination,raan,eccentricity,arg_perigee,mean_anomaly
+sat_001,Satellite 1,550,53.0,0,0,0,0
+sat_002,Satellite 2,550,53.0,0,0,0,60
+```
+
+### 3. Running Experiments
+
+1. **Design Experiment**
+   - Compare multiple routing algorithms
+   - Test different constellation configurations
+   - Analyze performance metrics
+
+2. **Execute and Analyze**
+   - Automated experiment execution
+   - Statistical analysis and insights
+   - Export results in CSV/JSON format
+
+## 🧪 Experiment Examples
+
+### E1: Protocol Comparison
+```python
+# Compare routing algorithms on Starlink constellation
+experiment_config = {
+    "name": "Starlink Protocol Comparison",
+    "constellation_id": "starlink",
+    "routing_algorithms": ["epidemic", "prophet", "spray_and_wait"],
+    "duration": 24.0,  # hours
+    "ground_stations": ["gs_la", "gs_tokyo"],
+    "traffic_pattern": "uniform"
+}
+```
+
+### E2: Los Angeles to Tokyo Communication
+```python
+# Test communication from LA to Tokyo ground stations
+simulation_config = {
+    "name": "LA to Tokyo Communication Test",
+    "constellation_id": "starlink",
+    "routing_algorithm": "prophet",
+    "duration": 6.0,  # hours
+    "ground_stations": ["gs_la", "gs_tokyo"]
+}
+```
+
+## 📊 Performance Metrics
+
+The simulator tracks comprehensive performance metrics:
+
+- **Delivery Ratio**: Percentage of bundles successfully delivered
+- **End-to-End Delay**: Average time for bundle delivery
+- **Hop Count**: Average number of hops per delivered bundle
+- **Network Overhead**: Ratio of transmissions to deliveries
+- **Buffer Utilization**: Storage usage across network nodes
+- **Contact Statistics**: Frequency and duration of communication windows
+
+## 🛰️ Supported Constellations
+
+### Built-in Constellations
+- **Starlink (Phase 1)**: 1,584 satellites in LEO (550 km, 53° inclination)
+- **Project Kuiper**: 3,236 satellites in multiple LEO shells
+- **GPS**: 31 satellites in MEO (20,200 km, 55° inclination)
+- **GEO Minimal**: 3 satellites in geostationary orbit
+- **Molniya**: 12 satellites in highly elliptical orbit
+
+### Custom Constellation Support
+Upload CSV files with orbital elements to test custom configurations:
+- Research constellations
+- Proposed mega-constellations
+- Mission-specific networks
+- Interplanetary communication networks
+
+## 🔬 DTN Routing Algorithms
+
+### 1. Epidemic Routing
+- **Strategy**: Flood-based replication to all encountered nodes
+- **Pros**: High delivery ratio, robust against failures
+- **Cons**: High overhead, resource intensive
+
+### 2. PRoPHET Routing
+- **Strategy**: Probabilistic routing based on encounter history
+- **Pros**: Balanced performance, adaptive to patterns
+- **Cons**: Complex state maintenance
+
+### 3. Spray and Wait
+- **Strategy**: Limited replication followed by direct delivery
+- **Pros**: Controlled overhead, good delay/overhead tradeoff
+- **Cons**: Limited coverage in sparse networks
+
+## 📡 OSI Model Implementation
+
+| Layer | Implementation | DTN Features |
+|-------|---------------|--------------|
+| **Physical (1)** | Satellite RF links, orbital mechanics | Link budgets, eclipse modeling |
+| **Data Link (2)** | Contact windows, ARQ protocols | Buffer management, flow control |
+| **Network (3)** | DTN routing algorithms | Store-and-forward, path optimization |
+| **Transport (4)** | Bundle Protocol (RFC 9171) | Reliable delivery, fragmentation |
+| **Session (5)** | Contact session management | Connection state, recovery |
+| **Presentation (6)** | Data encoding/compression | Payload optimization |
+| **Application (7)** | Simulation control, experiments | Traffic generation, analysis |
+
+## 🔧 API Endpoints
+
+### Simulation Management
+- `POST /api/v2/simulation/create` - Create new simulation
+- `GET /api/v2/simulation/list` - List all simulations
+- `POST /api/v2/simulation/{id}/start` - Start simulation
+- `GET /api/v2/simulation/{id}/metrics` - Get performance metrics
+
+### Constellation Management
+- `GET /api/v2/constellation/library` - Get built-in constellations
+- `POST /api/v2/constellation/upload` - Upload custom constellation
+- `GET /api/v2/constellation/{id}/satellites` - Get satellite positions
+
+### Real-time Data (WebSocket)
+- `ws://localhost:8000/api/v2/realtime/simulation/{id}` - Live simulation updates
+- `ws://localhost:8000/api/v2/realtime/metrics/{id}` - Live performance metrics
+- `ws://localhost:8000/api/v2/realtime/visualization/{id}` - 3D visualization data
+
+## 🧪 Testing and Validation
+
+### Unit Tests
 ```bash
-# Clone repository
-git clone https://github.com/JKelleyDev/delay-tolerant-networks.git
-cd delay-tolerant-networks
-
-# Install backend dependencies
-cd backend && pip install -r requirements.txt && cd ..
-
-# Install frontend dependencies  
-cd frontend && npm install && cd ..
-
-# Start development environment (both frontend + backend)
-./scripts/start-dev.sh
-
-# Or run individually:
-# Backend API: cd backend && python -m dtn.api.server
-# Frontend:    cd frontend && npm run dev
+cd backend
+python -m pytest tests/ -v --cov=src/dtn
 ```
 
-## 🏗️ Project Architecture
-
-### Three-Pair Development System
-
-#### **Pair 1: Core Networking & Protocols** 
-- DTN Bundle layer implementation
-- Routing algorithms (Epidemic, PRoPHET, Spray-and-Wait)
-- ARQ and buffer management
-- PHY abstraction layer
-
-#### **Pair 2: Satellite Mobility & Data Collection**
-- Orbital mechanics calculations
-- Contact window prediction  
-- Mobility model integration
-- Experiment data collection framework
-
-#### **Pair 3: GUI & Visualization**
-- 3D satellite visualization with Earth globe
-- Real-time contact window display
-- Performance metrics dashboard
-- Interactive controls and configuration
-
-### Complete OSI Model Implementation
-
-```
-┌─────────────────┐
-│   Application   │ ← Experiment Framework & Data Collection
-├─────────────────┤
-│  Presentation   │ ← Data Encoding, Compression, Encryption
-├─────────────────┤
-│    Session      │ ← Session Management, Connection Control
-├─────────────────┤
-│   Transport     │ ← DTN Bundle Layer (IDs, TTL, Fragmentation)  
-├─────────────────┤
-│    Network      │ ← Routing (Epidemic, PRoPHET, Spray-and-Wait)
-├─────────────────┤
-│   Data Link     │ ← ARQ, Buffer Management, Contact Windows
-├─────────────────┤
-│   Physical      │ ← Satellite Communication Model
-└─────────────────┘
+### Integration Tests
+```bash
+# Test full API stack
+python -m pytest tests/integration/ -v
 ```
 
-#### **Layer Implementation Details:**
-
-**Application Layer (7):** Experiment configuration, data collection, performance analysis, user interfaces
-
-**Presentation Layer (6):** Bundle payload encoding/decoding, data compression for bandwidth optimization, optional encryption for secure communications
-
-**Session Layer (5):** Contact session establishment, connection state management, session recovery after network partitions
-
-**Transport Layer (4):** DTN Bundle protocol with reliable delivery, fragmentation/reassembly, flow control
-
-**Network Layer (3):** DTN routing algorithms, store-and-forward decisions, path optimization
-
-**Data Link Layer (2):** Link-level ARQ, buffer management, contact window utilization, error detection/correction
-
-**Physical Layer (1):** Satellite communication channels, orbital mechanics, RF signal propagation, antenna modeling
-
-## 📁 Project Structure
-
+### Performance Benchmarks
+```bash
+# Run performance test suite
+python -m pytest tests/performance/ --benchmark-only
 ```
-delay-tolerant-networks/
-├── src/                          # Source code
-│   ├── bundle.py                 # DTN Bundle implementation (Pair 1)
-│   ├── orbital_mechanics.py      # Satellite orbital calculations (Pair 2)  
-│   ├── contact_prediction.py     # Contact window algorithms (Pair 2)
-│   ├── satellite_mobility.py     # Mobility model integration (Pair 2)
-│   ├── constellation_config.py   # Satellite constellation management (Pair 2)
-│   ├── experiment_data.py        # Data collection framework (Pair 2)
-│   └── main.py                   # Main simulation entry point
-├── tests/                        # Comprehensive test suite
-│   ├── test_bundle.py           # Bundle layer tests (93% coverage)
-│   └── test_*.py                # Module-specific test suites
-├── docs/                         # Technical documentation
-│   ├── satellite_communication_architecture.md  # Complete satellite architecture
-│   ├── pair2_implementation_guide.md           # Implementation roadmap
-│   ├── bundle_format_spec.md                   # DTN bundle specification
-│   └── epics/iteration_1/                      # Sprint planning and tickets
-├── .github/workflows/            # CI/CD pipeline
-│   └── ci.yml                   # Automated quality checks
-├── Makefile                     # Development automation
-├── requirements.txt             # Production dependencies
-└── requirements-dev.txt         # Development dependencies
-```
-
-## 🛰️ Satellite Implementation Features
-
-### Constellation Support
-- **LEO:** Low Earth Orbit (Iridium, Starlink-like configurations)
-- **MEO:** Medium Earth Orbit (GPS-like navigation constellations)
-- **GEO:** Geostationary (3-satellite minimal coverage)
-- **HEO:** Highly Elliptical Orbit (Molniya-type for polar coverage)
-- **Interplanetary:** Earth-Mars communication scenarios
-
-### Advanced Orbital Mechanics
-- Accurate position propagation using Keplerian elements
-- Coordinate system transformations (ECI, ECEF, geodetic)
-- Ground track calculations and subsatellite points
-- Contact window prediction with elevation constraints
-- Real-time satellite tracking and visibility determination
-
-### DTN-Optimized Features
-- Long-delay tolerance (minutes to hours)
-- Store-and-forward optimization for intermittent contacts
-- Priority-based message handling (LOW, NORMAL, HIGH, CRITICAL)
-- Contact-aware routing with orbital predictions
-- Comprehensive experiment data collection
-
-## 🧪 Experiments & Analysis
-
-### Required Experiments (Meeting Academic Standards)
-
-#### **E1: Protocol Comparison**
-- **Metrics:** Delivery ratio, delay distribution, overhead ratio
-- **Variables:** Node counts (10, 25, 50, 100 satellites)
-- **Algorithms:** Epidemic vs PRoPHET vs Spray-and-Wait
-
-#### **E2: Buffer Size Impact**  
-- **Buffer Sizes:** 5MB, 20MB, 80MB per satellite
-- **Analysis:** Storage efficiency, message drops, performance curves
-- **Constellation:** Starlink-like LEO (1584 satellites)
-
-#### **E3: TTL Impact Analysis**
-- **TTL Values:** 30, 120, 480 minutes  
-- **Focus:** Message expiration patterns, orbital period alignment
-- **Scenarios:** Various constellation types and contact patterns
-
-### Data Collection Framework
-- **Mobility Logging:** Real-time satellite positions and velocities
-- **Contact Events:** Link establishment/termination with quality metrics
-- **Network States:** Buffer occupancy, routing tables, message flows
-- **Performance Metrics:** Automated calculation of delivery ratios and delays
-
-## 🎮 GUI & Visualization
-
-### 3D Earth Visualization
-- **Globe Rendering:** Textured Earth with geographic features
-- **Satellite Tracking:** Real-time orbital motion with accurate positioning
-- **Ground Stations:** Global coverage with antenna coverage areas
-- **Contact Links:** Animated communication beams during active contacts
-
-### Real-Time Dashboards
-- **Contact Timeline:** Gantt chart showing scheduled communication windows
-- **Buffer Status:** Per-satellite storage utilization bars
-- **Performance Metrics:** Live delivery ratios, delay CDFs, overhead tracking
-- **Network Topology:** Dynamic connectivity graph with routing paths
-
-### Interactive Controls
-- **Time Acceleration:** 1x to 10000x simulation speed
-- **Constellation Selection:** Preset configurations with custom editing
-- **Experiment Configuration:** Parameter adjustment and scenario setup
-- **Data Export:** CSV/JSON export for external analysis tools
-
-## 🛠️ Development Commands (Makefile)
-
-### Essential Commands
-
-| Command | Description | When to use |
-|---------|-------------|-------------|
-| `make help` | Show all available commands | When you need guidance |
-| `make install` | Install dependencies | First setup or new dependencies |
-| `make test` | Run unit tests | Quick testing during development |
-| `make all` | **Run everything** (format, lint, typecheck, test) | **Before committing** |
-
-### Quality Assurance
-
-| Command | Description | Coverage Target |
-|---------|-------------|-----------------|
-| `make format` | Format code with black | Auto-formatting |
-| `make lint` | Check code style with flake8 | Zero violations |
-| `make typecheck` | Type checking with mypy | Complete type safety |
-| `make coverage` | Generate test coverage report | ≥85% per module |
-
-## 🧪 Testing Strategy
-
-### Test-Driven Development (TDD)
-- **Write tests first** before implementing functionality
-- **Comprehensive coverage** targeting >85% per module
-- **Integration testing** across pair boundaries
-- **Performance benchmarking** for real-time requirements
-
-### Current Test Status
-- **Bundle Module:** 93% coverage, 10 comprehensive tests
-- **Satellite Modules:** Boilerplate with TODO-driven test requirements
-- **CI Pipeline:** Automated testing on Python 3.10, 3.11, 3.12
-
-### Validation Strategy
-- **Mathematical Accuracy:** Orbital calculations validated against TLE data
-- **Real-World Comparison:** Contact predictions vs published satellite schedules  
-- **Performance Benchmarks:** Real-time operation requirements
-- **Cross-Platform Testing:** Ensure compatibility across development environments
-
-## 🏆 Sprint Planning Overview
-
-### **Sprint 1 (Weeks 1-2): Foundation & Architecture**
-**Goal:** Establish architecture, technology decisions, and development foundations
-
-#### **Pair 1 - Core Networking:**
-- DTN Bundle layer foundation (IDs, TTL, basic message structure)
-- Bundle data structures with satellite-specific features
-- PHY abstraction layer design and initial implementation
-- Basic routing algorithm framework
-
-#### **Pair 2 - Mobility & Data:**
-- Satellite vs terrestrial architecture decision
-- Orbital mechanics framework and contact prediction design
-- Contact plan CSV format specification
-- Experiment data collection framework design
-
-#### **Pair 3 - GUI & Visualization:**
-- 3D visualization framework selection and setup
-- Earth globe vs flat terrain rendering decision
-- Project UI shell and basic controls
-- Camera system and coordinate transformations
-
-### **Sprint 2 (Weeks 3-4): Core Implementation**
-**Goal:** Implement core functionality across all layers
-
-#### **Pair 1:**
-- Complete routing algorithms (Epidemic, PRoPHET, Spray-and-Wait)
-- ARQ implementation (stop-and-wait or sliding window)
-- Basic buffer management and drop policies
-- PHY layer integration with satellite model
-
-#### **Pair 2:**
-- Orbital mechanics calculations (position, velocity, propagation)
-- Contact window prediction algorithms
-- Real-time satellite mobility integration
-- CSV contact plan import/export functionality
-
-#### **Pair 3:**
-- 3D Earth visualization with satellite tracking
-- Real-time position updates and orbital motion
-- Contact window timeline visualization
-- Basic performance metrics display
-
-### **Sprint 3 (Weeks 5-6): Advanced Features**
-**Goal:** Advanced DTN features and optimization
-
-#### **Pair 1:**
-- Fragmentation and reassembly for large messages
-- Custody transfer mechanisms
-- Advanced buffer policies and prioritization
-- Duplicate suppression and restoration
-
-#### **Pair 2:**
-- Advanced constellation management (LEO/MEO/GEO/HEO)
-- Contact plan change events (mid-simulation rescheduling)
-- Performance optimization for large constellations
-- Comprehensive experiment data collection
-
-#### **Pair 3:**
-- Advanced visualization features (animated message paths)
-- Buffer fill bars and network topology display
-- Interactive constellation editing
-- Performance dashboards and real-time metrics
-
-### **Sprint 4 (Weeks 7-8): Integration & Experiments**
-**Goal:** System integration and initial experiments
-
-#### **All Pairs Integration:**
-- Complete system integration testing
-- Performance profiling and optimization
-- Execute experiments E1 and E2
-- Mid-simulation contact plan changes implementation
-
-### **Sprint 5 (Weeks 9-10): Final Experiments & Presentation**
-**Goal:** Final polish and comprehensive analysis
-
-#### **All Pairs:**
-- Complete experiment E3 (TTL impact analysis)
-- Final bug fixes and edge case handling
-- Results analysis and insight generation
-- Presentation preparation and demo polish
-
-## 🎖️ Competitive Advantages
-
-### Technical Excellence
-- **Enterprise Architecture:** Clean separation of concerns across OSI layers
-- **Satellite Complexity:** Advanced orbital mechanics beyond basic terrestrial DTN
-- **Real-Time Performance:** Sub-millisecond orbital calculations for GUI responsiveness
-- **Academic Rigor:** Comprehensive experiment design with statistical analysis
-
-### Professional Engineering
-- **Code Quality:** >85% test coverage, type safety, automated CI/CD
-- **Documentation:** API references, implementation guides, architectural decisions
-- **Reproducibility:** Containerized deployment, configuration management
-- **Maintainability:** Modular design, clear interfaces, comprehensive logging
-
-### Research Impact
-- **Novel Scenarios:** Interplanetary communication modeling
-- **Performance Insights:** Orbital mechanics impact on DTN routing effectiveness
-- **Scalability Analysis:** Large constellation performance (1000+ satellites)
-- **Real-World Applicability:** Configurations based on actual satellite networks
-
-## 📊 Success Metrics (100 pts Rubric)
-
-| Category | Points | Our Approach |
-|----------|--------|--------------|
-| **PHY/MAC/Network Fidelity** | 22 | Realistic satellite comm model with orbital mechanics |
-| **Wireless Tech Profiles** | 5 | Satellite constellation scenarios (LEO/MEO/GEO/HEO) |
-| **Topology/Contact Changes** | 5 | Dynamic orbital contact windows, mid-simulation changes |
-| **Connectivity Restoration** | 5 | Store-and-forward, custody transfer, duplicate suppression |
-| **Mobility Integration** | 6 | CSV contact plans + orbital mechanics mobility model |
-| **GUI Completeness** | 6 | 3D Earth visualization, real-time tracking, dashboards |
-| **Experimental Design** | 18 | Rigorous statistical analysis, multiple constellation types |
-| **Results & Insights** | 18 | Performance comparison, orbital mechanics impact analysis |
-| **Code Quality** | 10 | >85% coverage, CI/CD, professional architecture |
-| **Presentation** | 5 | Live satellite tracking demo, performance visualizations |
-
-## 📖 Documentation
-
-### Technical References
-- **[Satellite Architecture](docs/satellite_communication_architecture.md)** - Complete orbital mechanics and communication specifications
-- **[Implementation Guide](docs/pair2_implementation_guide.md)** - Step-by-step development roadmap for Pair 2
-- **[Bundle Specification](docs/bundle_format_spec.md)** - DTN bundle format and API reference
-- **[Epic Planning](docs/epics/)** - Sprint tickets organized by iteration
-
-### API Documentation
-- **Bundle Layer:** `src/bundle.py` - DTN message handling and serialization
-- **Orbital Mechanics:** `src/orbital_mechanics.py` - Satellite position calculations
-- **Contact Prediction:** `src/contact_prediction.py` - Communication window algorithms
-- **Mobility Integration:** `src/satellite_mobility.py` - Real-time position updates
-- **Experiment Framework:** `src/experiment_data.py` - Data collection and analysis
 
 ## 🤝 Contributing
 
-### Development Workflow
-```bash
-# 1. Create feature branch
-git checkout -b feature/your-feature
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
+3. **Commit changes**: `git commit -m 'Add amazing feature'`
+4. **Push to branch**: `git push origin feature/amazing-feature`
+5. **Open a Pull Request**
 
-# 2. Implement with TDD approach
-# Write tests first, then implement functionality
+### Development Guidelines
+- Follow PEP 8 for Python code
+- Use ESLint configuration for JavaScript/React
+- Write tests for new features
+- Update documentation for API changes
 
-# 3. Run quality checks
-make all
+## 📈 Roadmap
 
-# 4. Commit and push
-git add .
-git commit -m "Descriptive commit message"
-git push origin feature/your-feature
+### Completed ✅
+- [x] Core DTN simulation engine
+- [x] Realistic orbital mechanics (SGP4/SDP4)
+- [x] Three routing algorithms (Epidemic, PRoPHET, Spray-and-Wait)
+- [x] FastAPI backend with comprehensive endpoints
+- [x] React frontend with 3D visualization setup
+- [x] Contact prediction and window management
+- [x] Performance metrics and analysis framework
 
-# 5. Create pull request
-```
+### In Progress 🚧
+- [ ] Complete 3D Earth visualization with Three.js
+- [ ] Real-time satellite position updates
+- [ ] WebSocket integration for live data streaming
+- [ ] Advanced performance dashboards
 
-### Code Review Requirements
-- ✅ All CI checks passing (format, lint, typecheck, test)
-- ✅ Test coverage maintained ≥85%
-- ✅ Documentation updated for new features
-- ✅ Integration points validated with other pairs
-- ✅ Performance benchmarks meet requirements
+### Planned 🎯
+- [ ] Contact Graph Routing (CGR) algorithm
+- [ ] Machine learning-based adaptive routing
+- [ ] Interplanetary communication scenarios
+- [ ] Advanced RF link modeling
+- [ ] Integration with real TLE data sources
+- [ ] Docker containerization
+- [ ] CI/CD pipeline
+- [ ] Performance optimization with Cython
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **NASA**: For orbital mechanics standards and DTN protocol specifications
+- **IETF**: For Bundle Protocol (RFC 9171) and DTN architecture
+- **Skyfield**: For accurate astronomical calculations
+- **Three.js**: For 3D visualization capabilities
+- **FastAPI**: For modern Python web framework
+- **React**: For responsive user interface development
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/YourUsername/delay-tolerant-networks/issues)
+- **Documentation**: [Project Wiki](https://github.com/YourUsername/delay-tolerant-networks/wiki)
+- **Discussions**: [GitHub Discussions](https://github.com/YourUsername/delay-tolerant-networks/discussions)
 
 ---
 
-**Built with professional engineering practices to demonstrate DTN expertise and satellite communication mastery** 🛰️
-
-*Ready to outperform the competition with advanced satellite modeling and enterprise-grade architecture.*
+**Built with 💙 for advancing delay-tolerant networking research and satellite communication understanding.**
