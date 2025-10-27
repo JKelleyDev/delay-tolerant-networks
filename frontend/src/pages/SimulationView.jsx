@@ -21,6 +21,10 @@ const SimulationView = () => {
   const [view3D, setView3D] = useState(true)
   const [weatherEnabled, setWeatherEnabled] = useState(false)
   const [weatherSeed, setWeatherSeed] = useState('')
+  const [trafficPattern, setTrafficPattern] = useState('uniform')
+  const [bundleSize, setBundleSize] = useState(1)
+  const [bundleTTL, setBundleTTL] = useState(3600)
+  const [bufferSize, setBufferSize] = useState(100)
 
   // Fetch data on component mount
   useEffect(() => {
@@ -309,7 +313,11 @@ const SimulationView = () => {
         ground_stations: selectedGroundStations,
         time_step: 1.0,
         weather_enabled: weatherEnabled,
-        weather_seed: weatherSeed ? parseInt(weatherSeed) : null
+        weather_seed: weatherSeed ? parseInt(weatherSeed) : null,
+        traffic_pattern: trafficPattern,
+        bundle_size_kb: bundleSize,
+        bundle_ttl_seconds: bundleTTL,
+        satellite_buffer_size_kb: bufferSize
       }
 
       const response = await fetch('/api/v2/simulation/create', {
@@ -324,7 +332,14 @@ const SimulationView = () => {
       
       if (data.success) {
         console.log('Simulation created:', data.data.simulation_id)
-        setSimulationName('') // Clear form
+        // Clear form
+        setSimulationName('')
+        setTrafficPattern('uniform')
+        setBundleSize(1)
+        setBundleTTL(3600)
+        setBufferSize(100)
+        setWeatherEnabled(false)
+        setWeatherSeed('')
         await fetchSimulations() // Refresh simulation list
       } else {
         setError(data.message || 'Failed to create simulation')
@@ -340,12 +355,24 @@ const SimulationView = () => {
         constellation: selectedConstellation,
         routing_algorithm: routingAlgorithm,
         duration: simulationDuration,
+        traffic_pattern: trafficPattern,
+        bundle_size_kb: bundleSize,
+        bundle_ttl_seconds: bundleTTL,
+        satellite_buffer_size_kb: bufferSize,
+        weather_enabled: weatherEnabled,
         status: 'created',
         created_at: new Date().toISOString()
       }
       
       setSimulations(prev => [...prev, mockSimulation])
-      setSimulationName('') // Clear form
+      // Clear form
+      setSimulationName('')
+      setTrafficPattern('uniform')
+      setBundleSize(1)
+      setBundleTTL(3600)
+      setBufferSize(100)
+      setWeatherEnabled(false)
+      setWeatherSeed('')
       console.log('Created mock simulation (backend unavailable):', mockSimulation)
     } finally {
       setLoading(false)
@@ -508,6 +535,94 @@ const SimulationView = () => {
                   max="168"
                   className="form-input w-full"
                 />
+              </div>
+
+              {/* Advanced Configuration */}
+              <div className="pt-4 border-t border-gray-600">
+                <label className="form-label">Advanced Configuration</label>
+                <div className="mb-2 text-xs text-blue-300">
+                  Configure traffic patterns, bundle parameters, and satellite storage
+                </div>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="form-label text-xs">Traffic Pattern</label>
+                    <select
+                      value={trafficPattern}
+                      onChange={(e) => setTrafficPattern(e.target.value)}
+                      className="form-input w-full text-sm"
+                    >
+                      <option value="uniform">Uniform - Constant data rate</option>
+                      <option value="bursty">Bursty - Intermittent high-rate transmission</option>
+                      <option value="custom">Custom - User-defined pattern</option>
+                    </select>
+                    <div className="mt-1 text-xs text-gray-400">
+                      {trafficPattern === 'uniform' && 'Consistent data generation rate throughout simulation'}
+                      {trafficPattern === 'bursty' && 'Periodic bursts of high data volume with quiet periods'}
+                      {trafficPattern === 'custom' && 'Allows custom traffic profile configuration'}
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="form-label text-xs">Bundle Size (KB)</label>
+                      <input
+                        type="number"
+                        value={bundleSize}
+                        onChange={(e) => setBundleSize(Number(e.target.value))}
+                        min="0.1"
+                        max="100"
+                        step="0.1"
+                        className="form-input w-full text-sm"
+                      />
+                      <div className="mt-1 text-xs text-gray-400">
+                        Data packet size
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="form-label text-xs">Bundle TTL (sec)</label>
+                      <input
+                        type="number"
+                        value={bundleTTL}
+                        onChange={(e) => setBundleTTL(Number(e.target.value))}
+                        min="60"
+                        max="86400"
+                        step="60"
+                        className="form-input w-full text-sm"
+                      />
+                      <div className="mt-1 text-xs text-gray-400">
+                        Time-to-live
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="form-label text-xs">Satellite Buffer Size (KB)</label>
+                    <input
+                      type="number"
+                      value={bufferSize}
+                      onChange={(e) => setBufferSize(Number(e.target.value))}
+                      min="10"
+                      max="10000"
+                      step="10"
+                      className="form-input w-full text-sm"
+                    />
+                    <div className="mt-1 text-xs text-gray-400">
+                      Storage capacity per satellite for bundle buffering
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs bg-blue-900 bg-opacity-30 p-2 rounded">
+                    <div className="text-blue-300 mb-1">Configuration Impact:</div>
+                    <div className="text-gray-300 space-y-0.5">
+                      <div>• Larger bundles = higher transmission delay</div>
+                      <div>• Shorter TTL = more aggressive routing decisions</div>
+                      <div>• Buffer size affects store-and-forward capacity</div>
+                      <div>• Traffic patterns influence network congestion</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Weather Simulation */}
