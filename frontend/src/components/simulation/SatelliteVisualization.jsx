@@ -203,13 +203,12 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       // Rotating dish animation
       gsAntenna.userData = { rotationSpeed: 0.02 }
       
-      // Ground station beam effect
-      const beamGeometry = new THREE.CylinderGeometry(5, 50, 200, 8, 1, true)
+      // Simple beam indicator (no large range visualization)
+      const beamGeometry = new THREE.CylinderGeometry(2, 20, 100, 8)
       const beamMaterial = new THREE.MeshBasicMaterial({
         color: gs.color,
         transparent: true,
-        opacity: 0.2,
-        side: THREE.DoubleSide
+        opacity: 0.3
       })
       const beam = new THREE.Mesh(beamGeometry, beamMaterial)
       beam.position.copy(gsAntenna.position)
@@ -249,6 +248,31 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       
       // Rotate Earth slowly
       earth.rotation.y += 0.001
+      
+      // Animate satellite footprints and transmission beams
+      if (satelliteGroupRef.current) {
+        satelliteGroupRef.current.children.forEach(child => {
+          if (child.userData && child.userData.isActive) {
+            child.userData.time += 0.05
+            const pulse = Math.sin(child.userData.time) * 0.2 + 0.8
+            
+            if (child.material) {
+              // Single material (footprint)
+              child.material.opacity = child.userData.baseOpacity * pulse
+              const scale = 1 + Math.sin(child.userData.time * 1.5) * 0.1
+              child.scale.setScalar(scale)
+            } else if (child.children) {
+              // Group with multiple children (beam lines)
+              child.children.forEach(line => {
+                if (line.material) {
+                  line.material.opacity = line.material.userData?.baseOpacity || 
+                    (line.material.opacity / pulse) * pulse
+                }
+              })
+            }
+          }
+        })
+      }
       
       // Gentle star rotation
       stars.rotation.y += 0.0002
@@ -324,26 +348,113 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       label.position.copy(satellite.position)
       label.position.y += 200
       
-      // Add orbital trail effect
-      const trailGeometry = new THREE.RingGeometry(
-        Math.sqrt(position.x ** 2 + position.y ** 2 + position.z ** 2) - 10,
-        Math.sqrt(position.x ** 2 + position.y ** 2 + position.z ** 2) + 10,
-        32
-      )
-      const trailMaterial = new THREE.MeshBasicMaterial({
-        color: 0x004488,
-        transparent: true,
-        opacity: 0.1,
-        side: THREE.DoubleSide
-      })
-      const trail = new THREE.Mesh(trailGeometry, trailMaterial)
-      trail.lookAt(0, 0, 0)
+      // Create Earth footprint projection (only show when transmitting)
+      const isTransmitting = (satData.contacts || 0) > 0 || (satData.bundles_stored || 0) > 0
+      let footprintProjection = null
+      
+      if (isTransmitting) {
+        // Calculate satellite's footprint on Earth surface
+        const satAltitude = Math.sqrt(position.x ** 2 + position.y ** 2 + position.z ** 2) - 6371
+        const earthRadius = 6371
+        
+        // Calculate footprint radius (coverage circle on Earth)
+        const footprintRadius = earthRadius * Math.acos(earthRadius / (earthRadius + satAltitude))
+        
+        // Project footprint onto Earth surface
+        const satToEarth = new THREE.Vector3(position.x, position.y, position.z).normalize()
+        const footprintCenter = satToEarth.clone().multiplyScalar(earthRadius)
+        
+        // Create circular footprint on Earth surface
+        const footprintGeometry = new THREE.CircleGeometry(footprintRadius, 32)
+        const footprintMaterial = new THREE.MeshBasicMaterial({
+          color: (satData.bundles_stored || 0) > 0 ? 0x00ff44 : 0x0088ff,
+          transparent: true,
+          opacity: 0.6,
+          side: THREE.DoubleSide
+        })
+        
+        footprintProjection = new THREE.Mesh(footprintGeometry, footprintMaterial)
+        footprintProjection.position.copy(footprintCenter)
+        footprintProjection.lookAt(0, 0, 0) // Face away from Earth center
+        
+        // Add pulsing animation for active transmission
+        footprintProjection.userData = { 
+          isActive: true,
+          baseOpacity: 0.6,
+          time: Math.random() * Math.PI * 2 // Random start phase
+        }
+        
+        // Add transmission beam from satellite to Earth footprint
+        const satPos = new THREE.Vector3(position.x, position.y, position.z)
+        const earthPos = footprintCenter.clone()
+        
+        // Create multiple beam lines for a cone effect
+        const beamLines = new THREE.Group()
+        
+        // Main center beam
+        const centerPoints = [satPos, earthPos]
+        const centerGeometry = new THREE.BufferGeometry().setFromPoints(centerPoints)
+        const centerMaterial = new THREE.LineBasicMaterial({
+          color: (satData.bundles_stored || 0) > 0 ? 0x00ff44 : 0x0088ff,
+          linewidth: 3,
+          transparent: true,
+          opacity: 0.8
+        })
+        const centerBeam = new THREE.Line(centerGeometry, centerMaterial)
+        beamLines.add(centerBeam)
+        
+        // Add cone edge lines for beam spread
+        const beamSpread = footprintRadius * 0.3 // Beam widens as it approaches Earth
+        const perpVector1 = new THREE.Vector3(1, 0, 0).cross(satToEarth).normalize()
+        const perpVector2 = new THREE.Vector3(0, 1, 0).cross(satToEarth).normalize()
+        
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2
+          const offset = perpVector1.clone().multiplyScalar(Math.cos(angle) * beamSpread)
+            .add(perpVector2.clone().multiplyScalar(Math.sin(angle) * beamSpread))
+          
+          const edgePoint = earthPos.clone().add(offset)
+          const edgePoints = [satPos, edgePoint]
+          const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints)
+          const edgeMaterial = new THREE.LineBasicMaterial({
+            color: (satData.bundles_stored || 0) > 0 ? 0x00ff44 : 0x0088ff,
+            transparent: true,
+            opacity: 0.3
+          })
+          const edgeBeam = new THREE.Line(edgeGeometry, edgeMaterial)
+          beamLines.add(edgeBeam)
+        }
+        
+        beamLines.userData = {
+          isActive: true,
+          baseOpacity: 0.6,
+          time: Math.random() * Math.PI * 2
+        }
+        
+        satelliteGroupRef.current.add(beamLines)
+      }
+      
+      // Add bundle storage indicator
+      if ((satData.bundles_stored || 0) > 0) {
+        const bundleGeometry = new THREE.SphereGeometry(20, 8, 8)
+        const bundleMaterial = new THREE.MeshBasicMaterial({
+          color: 0xffaa00,
+          transparent: true,
+          opacity: 0.8
+        })
+        const bundleIndicator = new THREE.Mesh(bundleGeometry, bundleMaterial)
+        bundleIndicator.position.copy(satellite.position)
+        bundleIndicator.position.y += 100
+        satelliteGroupRef.current.add(bundleIndicator)
+      }
       
       satellite.userData = { id: satId, data: satData }
       
       satelliteGroupRef.current.add(satellite)
       satelliteGroupRef.current.add(label)
-      satelliteGroupRef.current.add(trail)
+      if (footprintProjection) {
+        satelliteGroupRef.current.add(footprintProjection)
+      }
     })
   }, [simulationData?.satellites])
 

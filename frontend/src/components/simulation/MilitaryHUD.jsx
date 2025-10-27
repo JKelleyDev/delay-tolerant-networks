@@ -48,8 +48,16 @@ const MilitaryHUD = ({ simulationData, isRunning, selectedSatellite }) => {
               <span className="text-yellow-400">{activeContacts}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-300">Bundles:</span>
+              <span className="text-gray-300">Bundles Active:</span>
               <span className="text-blue-400">{activeBundles}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Delivered:</span>
+              <span className="text-green-400">{simulationData?.bundles?.delivered || 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Expired:</span>
+              <span className="text-red-400">{simulationData?.bundles?.expired || 0}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Throughput:</span>
@@ -159,8 +167,10 @@ const MilitaryHUD = ({ simulationData, isRunning, selectedSatellite }) => {
             <div className="flex items-center space-x-2">
               <Zap className="w-3 h-3" />
               <span>SIM TIME: {simulationData?.simTime || '00:00:00'}</span>
+              <span className="text-yellow-300 ml-2">({simulationData?.timeAcceleration || 3600}x)</span>
             </div>
             <div>FPS: {simulationData?.fps || '60'}</div>
+            <div className="text-xs text-gray-400">Network: {simulationData?.networkStatus || 'Unknown'}</div>
           </div>
         </div>
       </div>
