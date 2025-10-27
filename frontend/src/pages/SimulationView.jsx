@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Play, Pause, Square, Settings, Activity, Satellite, Globe } from 'lucide-react'
+import SatelliteVisualization from '../components/simulation/SatelliteVisualization'
+import MilitaryHUD from '../components/simulation/MilitaryHUD'
 
 const SimulationView = () => {
   const [simulationName, setSimulationName] = useState('')
@@ -13,6 +15,12 @@ const SimulationView = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [simulationDetails, setSimulationDetails] = useState({})
+  const [selectedSatellite, setSelectedSatellite] = useState(null)
+  const [realTimeData, setRealTimeData] = useState(null)
+  const [isSimulationRunning, setIsSimulationRunning] = useState(false)
+  const [view3D, setView3D] = useState(true)
+  const [weatherEnabled, setWeatherEnabled] = useState(false)
+  const [weatherSeed, setWeatherSeed] = useState('')
 
   // Fetch data on component mount
   useEffect(() => {
@@ -34,6 +42,101 @@ const SimulationView = () => {
 
     return () => clearInterval(interval)
   }, [simulations])
+
+  // Track running simulations for 3D visualization
+  useEffect(() => {
+    const runningSimulation = simulations.find(s => s.status === 'running')
+    setIsSimulationRunning(!!runningSimulation)
+    
+    if (runningSimulation) {
+      // Start real-time data fetching for 3D visualization
+      startRealTimeDataFetch(runningSimulation.id)
+    } else {
+      setRealTimeData(null)
+    }
+  }, [simulations])
+
+  const startRealTimeDataFetch = (simulationId) => {
+    // Simulated real-time data for 3D visualization
+    const interval = setInterval(() => {
+      // Generate mock satellite data for visualization
+      const satellites = {}
+      const contacts = []
+      const satelliteCount = constellations[selectedConstellation]?.satellites || 56
+      
+      for (let i = 0; i < Math.min(satelliteCount, 20); i++) {
+        const satId = `starlink_sat_${i.toString().padStart(3, '0')}`
+        const angle = (i / satelliteCount) * Math.PI * 2 + (Date.now() / 10000)
+        const radius = 7000 + Math.sin(angle * 3) * 500
+        const height = Math.cos(angle * 2) * 1000
+        
+        satellites[satId] = {
+          position: {
+            x: Math.cos(angle) * radius,
+            y: height,
+            z: Math.sin(angle) * radius
+          },
+          status: 'active',
+          contacts: Math.floor(Math.random() * 5)
+        }
+        
+        // Add some contact lines
+        if (i > 0 && Math.random() > 0.7) {
+          const targetId = `starlink_sat_${(i-1).toString().padStart(3, '0')}`
+          contacts.push({
+            source: satellites[satId].position,
+            target: satellites[targetId]?.position,
+            isActive: true,
+            hasData: Math.random() > 0.5
+          })
+        }
+      }
+      
+      // Generate mock packet paths for step-by-step visualization
+      const packetPaths = []
+      if (Math.random() > 0.7) { // Occasionally show packet paths
+        const sourcePos = { x: -3000, y: 0, z: 6371 + 50 } // Los Angeles approx
+        const destPos = { x: 3000, y: 2000, z: 6371 + 50 } // Tokyo approx
+        
+        // Create a multi-hop path through satellites
+        const pathHops = [sourcePos]
+        const satKeys = Object.keys(satellites)
+        
+        // Add 2-4 satellite hops
+        for (let i = 0; i < Math.min(3, satKeys.length); i++) {
+          const randomSat = satellites[satKeys[Math.floor(Math.random() * satKeys.length)]]
+          if (randomSat?.position) {
+            pathHops.push(randomSat.position)
+          }
+        }
+        pathHops.push(destPos)
+        
+        packetPaths.push({
+          id: 'packet_001',
+          hops: pathHops
+        })
+      }
+
+      setRealTimeData({
+        satellites,
+        contacts,
+        bundles: { active: Math.floor(Math.random() * 10) + 5 },
+        packetPaths, // Include packet paths for visualization
+        metrics: {
+          throughput: 50 + Math.random() * 100,
+          avgSNR: 45 + Math.random() * 10,
+          linkQuality: 95 + Math.random() * 5,
+          deliveryRatio: 0.8 + Math.random() * 0.15,
+          avgDelay: 100 + Math.random() * 50,
+          overhead: 1.0 + Math.random() * 0.5
+        },
+        simTime: new Date().toLocaleTimeString()
+      })
+    }, 1000) // Update every second for smooth animation
+    
+    // Cleanup function to clear interval when simulation stops
+    return () => clearInterval(interval)
+  }
 
   const fetchConstellations = async () => {
     try {
@@ -100,7 +203,9 @@ const SimulationView = () => {
         routing_algorithm: routingAlgorithm,
         duration: simulationDuration,
         ground_stations: selectedGroundStations,
-        time_step: 1.0
+        time_step: 1.0,
+        weather_enabled: weatherEnabled,
+        weather_seed: weatherSeed ? parseInt(weatherSeed) : null
       }
 
       const response = await fetch('/api/v2/simulation/create', {
@@ -268,6 +373,56 @@ const SimulationView = () => {
                   max="168"
                   className="form-input w-full"
                 />
+              </div>
+
+              {/* Weather Simulation */}
+              <div className="pt-4 border-t border-gray-600">
+                <label className="form-label">Weather Simulation</label>
+                <div className="mb-2 text-xs text-blue-300">
+                  Enable realistic weather effects on satellite RF performance
+                </div>
+                
+                <div className="space-y-3">
+                  <label className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={weatherEnabled}
+                      onChange={(e) => setWeatherEnabled(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded"
+                    />
+                    <span className="text-white">
+                      Enable Weather Effects
+                    </span>
+                  </label>
+                  
+                  {weatherEnabled && (
+                    <div>
+                      <label className="form-label text-xs">Weather Seed (optional)</label>
+                      <input
+                        type="number"
+                        value={weatherSeed}
+                        onChange={(e) => setWeatherSeed(e.target.value)}
+                        className="form-input w-full text-sm"
+                        placeholder="Random seed for reproducible weather patterns"
+                      />
+                      <div className="mt-1 text-xs text-gray-400">
+                        Leave empty for random weather. Use same seed for reproducible results.
+                      </div>
+                    </div>
+                  )}
+                  
+                  {weatherEnabled && (
+                    <div className="text-xs bg-blue-900 bg-opacity-30 p-2 rounded">
+                      <div className="text-blue-300 mb-1">Weather Effects Include:</div>
+                      <div className="text-gray-300 space-y-0.5">
+                        <div>• Rain fade attenuation (frequency dependent)</div>
+                        <div>• Atmospheric absorption (humidity, temperature)</div>
+                        <div>• Regional weather patterns (9 global regions)</div>
+                        <div>• Real-time weather evolution during simulation</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="pt-4 border-t border-gray-600">
@@ -470,24 +625,83 @@ const SimulationView = () => {
         </div>
       </div>
 
-      {/* 3D Visualization Placeholder */}
-      <div className="card">
-        <div className="card-header">
-          <Globe className="w-5 h-5 inline mr-2" />
-          3D Satellite Visualization
+      {/* 3D Military-Style Visualization */}
+      <div className="card p-0 overflow-hidden">
+        <div className="card-header bg-black border-b border-cyan-400">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Globe className="w-5 h-5 inline mr-2 text-cyan-400" />
+              <span className="text-cyan-400 font-mono">TACTICAL SATELLITE DISPLAY</span>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setView3D(!view3D)}
+                className={`px-3 py-1 text-xs font-mono border transition-colors ${
+                  view3D 
+                    ? 'border-green-400 text-green-400 bg-green-900 bg-opacity-30' 
+                    : 'border-gray-400 text-gray-400 hover:border-green-400 hover:text-green-400'
+                }`}
+              >
+                3D VIEW
+              </button>
+              <div className="text-xs font-mono text-gray-400">
+                STATUS: {isSimulationRunning ? 
+                  <span className="text-green-400 animate-pulse">ACTIVE</span> : 
+                  <span className="text-red-400">STANDBY</span>
+                }
+              </div>
+            </div>
+          </div>
         </div>
         
-        <div className="h-96 bg-gradient-to-br from-gray-800 to-blue-900 rounded-lg flex items-center justify-center">
-          <div className="text-center">
-            <Globe className="w-16 h-16 text-blue-400 mx-auto mb-4 animate-pulse" />
-            <h3 className="text-xl font-semibold text-white mb-2">3D Visualization</h3>
-            <p className="text-gray-400">
-              Real-time satellite tracking and communication visualization
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-              Three.js integration coming soon...
-            </p>
-          </div>
+        <div className="relative h-[600px] bg-black">
+          {view3D ? (
+            <>
+              <SatelliteVisualization
+                simulationData={realTimeData}
+                isRunning={isSimulationRunning}
+                onSatelliteClick={(satId, satData) => {
+                  setSelectedSatellite({
+                    id: satId,
+                    altitude: Math.sqrt(satData?.position?.x**2 + satData?.position?.y**2 + satData?.position?.z**2) - 6371,
+                    velocity: 7.66,
+                    contacts: 0,
+                    ...satData
+                  })
+                }}
+              />
+              <MilitaryHUD
+                simulationData={{
+                  satellites: realTimeData?.satellites || {},
+                  contacts: realTimeData?.contacts || [],
+                  bundles: realTimeData?.bundles || { active: 0 },
+                  metrics: {
+                    throughput: realTimeData?.metrics?.throughput || 0,
+                    avgSNR: realTimeData?.metrics?.avgSNR || 45.0,
+                    linkQuality: realTimeData?.metrics?.linkQuality || 100,
+                    deliveryRatio: realTimeData?.metrics?.deliveryRatio || 0.85,
+                    avgDelay: realTimeData?.metrics?.avgDelay || 120,
+                    overhead: realTimeData?.metrics?.overhead || 1.2
+                  },
+                  rfBand: 'Ka-band',
+                  weather: { enabled: false },
+                  routing: { algorithm: routingAlgorithm },
+                  simTime: realTimeData?.simTime || '00:00:00',
+                  fps: 60
+                }}
+                isRunning={isSimulationRunning}
+                selectedSatellite={selectedSatellite}
+              />
+            </>
+          ) : (
+            <div className="h-full bg-gradient-to-br from-gray-900 via-blue-900 to-black flex items-center justify-center">
+              <div className="text-center text-gray-400 font-mono">
+                <Globe className="w-16 h-16 mx-auto mb-4 animate-pulse" />
+                <div className="text-cyan-400">◤ 3D VIEW DISABLED ◥</div>
+                <div className="text-sm mt-2">Enable 3D View for tactical display</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
