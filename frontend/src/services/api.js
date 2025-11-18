@@ -213,7 +213,9 @@ export class WebSocketService {
   }
 
   connect(endpoint, simulationId, onMessage, onError = null) {
-    const wsUrl = `ws://localhost:8000/api/v2/realtime/${endpoint}/${simulationId}`
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host
+    const wsUrl = `${protocol}//${host}/api/v2/realtime/${endpoint}/${simulationId}`
     
     if (this.connections.has(wsUrl)) {
       console.warn(`WebSocket already connected to ${wsUrl}`)
@@ -250,7 +252,9 @@ export class WebSocketService {
   }
 
   disconnect(endpoint, simulationId) {
-    const wsUrl = `ws://localhost:8000/api/v2/realtime/${endpoint}/${simulationId}`
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host
+    const wsUrl = `${protocol}//${host}/api/v2/realtime/${endpoint}/${simulationId}`
     const ws = this.connections.get(wsUrl)
     
     if (ws) {

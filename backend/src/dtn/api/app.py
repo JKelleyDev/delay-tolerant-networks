@@ -49,9 +49,9 @@ ground_stations = None
 def get_contact_predictor():
     global contact_predictor, ground_stations
     if contact_predictor is None:
-        from dtn.orbital.contact_prediction import ContactPredictor, create_default_ground_stations
+        from dtn.orbital.contact_prediction import ContactPredictor, create_major_cities_ground_stations
         contact_predictor = ContactPredictor()
-        ground_stations = create_default_ground_stations()
+        ground_stations = create_major_cities_ground_stations()
     return contact_predictor, ground_stations
 
 
@@ -78,7 +78,7 @@ app = FastAPI(
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Frontend URLs
+    allow_origins=["*"],  # Allow all origins for cross-platform compatibility
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1639,7 +1639,7 @@ def generate_algorithm_comparison(results: dict) -> dict:
     return comparison
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
+def run_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = True):
     """Run the FastAPI server."""
     uvicorn.run(
         "dtn.api.app:app",
