@@ -1,0 +1,4 @@
+Algorithm,Delivery Ratio (%),Average Delay (minutes),Network Overhead,Routing Efficiency,Total Bundles,Bundles Delivered,RF Throughput (Mbps),Average SNR (dB),Average Data Rate (Mbps),Link Availability (%),Link Margin (dB),Data Transmitted (MB),RF Limited Contacts,Weather Affected Contacts,Average Weather Attenuation (dB),Cross-Layer Performance Score
+epidemic,96.5,11.5,13.59,0.071,144,139,5.79,50.4,1997.7,100.0,35.4,139.0,0,0,0.0,0.965
+prophet,72.9,23.5,9.72,0.075,144,105,4.38,50.6,1998.2,100.0,35.6,105.0,0,0,0.0,0.729
+spray_and_wait,52.1,25.5,8.32,0.063,144,75,3.13,50.7,1997.7,100.0,35.7,75.0,0,0,0.0,0.521
