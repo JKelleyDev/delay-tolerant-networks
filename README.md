@@ -1335,6 +1335,4 @@ localStorage.setItem('debug', 'true')
 
 ---
 
-**Built with 💙 for advancing delay-tolerant networking research and satellite communication understanding.**
-
 *This documentation is continuously updated. For the latest version, visit the project repository.*
