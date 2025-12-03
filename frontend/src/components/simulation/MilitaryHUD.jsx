@@ -175,7 +175,18 @@ const MilitaryHUD = ({ simulationData, isRunning, selectedSatellite }) => {
             <div className="flex items-center space-x-2">
               <Zap className="w-3 h-3" />
               <span>SIM TIME: {simulationData?.simTime || '00:00:00'}</span>
-              <span className="text-yellow-300 ml-2">({simulationData?.timeAcceleration || 3600}x)</span>
+              <span className={`ml-2 font-bold ${
+                (simulationData?.timeAcceleration || 1) === 1 ? 'text-green-300' :
+                (simulationData?.timeAcceleration || 1) < 10 ? 'text-yellow-300' :
+                (simulationData?.timeAcceleration || 1) < 100 ? 'text-orange-300' : 'text-red-300'
+              }`}>
+                {simulationData?.timeAcceleration === 1 ? 'REAL-TIME' : 
+                 simulationData?.timeAcceleration < 60 ? `${simulationData?.timeAcceleration || 1}x` :
+                 simulationData?.timeAcceleration === 60 ? '1MIN/SEC' :
+                 simulationData?.timeAcceleration === 300 ? '5MIN/SEC' :
+                 simulationData?.timeAcceleration === 3600 ? '1HR/SEC' : 
+                 `${simulationData?.timeAcceleration || 1}x`}
+              </span>
             </div>
             <div>FPS: {simulationData?.fps || '60'}</div>
             <div className="text-xs text-gray-400">Network: {simulationData?.networkStatus || 'Unknown'}</div>

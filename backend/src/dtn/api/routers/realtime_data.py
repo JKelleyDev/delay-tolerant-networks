@@ -5,7 +5,8 @@ Provides realistic simulation data for the frontend visualization.
 """
 
 from fastapi import APIRouter, HTTPException
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
+from pydantic import BaseModel
 import json
 import logging
 import math
@@ -27,7 +28,7 @@ class SimulationDataGenerator:
         self.simulation_id = simulation_id
         self.start_time = datetime.now()
         self.current_sim_time = 0.0  # Simulation seconds
-        self.time_acceleration = 3600  # 1 real second = 1 hour sim time
+        self.time_acceleration = 1  # Start at real-time (1x)
         
         # Initialize satellite constellation
         self.satellites = self._generate_satellite_constellation()
@@ -380,6 +381,15 @@ class SimulationDataGenerator:
         minutes = int((self.current_sim_time % 3600) // 60)
         seconds = int(self.current_sim_time % 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    
+    def set_time_acceleration(self, acceleration: float) -> bool:
+        """Set the time acceleration factor."""
+        if acceleration <= 0:
+            return False
+        
+        self.time_acceleration = acceleration
+        logger.info(f"Time acceleration changed to {acceleration}x for simulation {self.simulation_id}")
+        return True
 
 
 @router.get("/simulation/{simulation_id}")
@@ -592,4 +602,45 @@ async def list_active_simulations():
         
     except Exception as e:
         logger.error(f"Error listing active simulations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AccelerationRequest(BaseModel):
+    acceleration: Union[int, float]
+
+@router.post("/simulation/{simulation_id}/acceleration")
+async def set_time_acceleration(simulation_id: str, request: AccelerationRequest):
+    """Set time acceleration for a simulation."""
+    try:
+        if simulation_id not in active_simulations:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Simulation '{simulation_id}' not found in real-time data system. Available: {list(active_simulations.keys())}"
+            )
+        
+        acceleration = request.acceleration
+        
+        if acceleration <= 0:
+            raise HTTPException(status_code=400, detail="Acceleration must be a positive number")
+        
+        generator = active_simulations[simulation_id]['generator']
+        success = generator.set_time_acceleration(float(acceleration))
+        
+        if success:
+            return APIResponse(
+                success=True,
+                message=f"Time acceleration set to {acceleration}x",
+                data={
+                    'simulation_id': simulation_id,
+                    'acceleration': acceleration,
+                    'previous_acceleration': generator.time_acceleration
+                }
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Invalid acceleration value")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting time acceleration for {simulation_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

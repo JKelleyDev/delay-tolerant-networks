@@ -44,6 +44,7 @@ const SimulationView = () => {
   const [bundleTTL, setBundleTTL] = useState(3600)
   const [bufferSize, setBufferSize] = useState(100)
   const [bufferDropStrategy, setBufferDropStrategy] = useState('oldest')
+  const [timeAcceleration, setTimeAcceleration] = useState(1) // Start at 1x speed
 
   // Fetch data on component mount
   useEffect(() => {
@@ -201,10 +202,16 @@ const SimulationView = () => {
                   avgBufferUtilization: Number(simData.metrics?.avgBufferUtilization) || 0.35
                 },
                 simTime: simData.simTime || '00:00:00',
-                timeAcceleration: simData.timeAcceleration || 3600,
+                timeAcceleration: simData.timeAcceleration || timeAcceleration || 1,
                 networkStatus: 'operational',
                 currentSimTime: simData.currentSimTime || 0
               })
+              
+              // Sync local acceleration state with backend
+              if (simData.timeAcceleration !== undefined && simData.timeAcceleration !== timeAcceleration) {
+                setTimeAcceleration(simData.timeAcceleration)
+              }
+              
               return // Successfully processed real data
             } catch (dataProcessingError) {
               console.warn('Error processing simulation data:', dataProcessingError)
@@ -500,6 +507,27 @@ const SimulationView = () => {
         console.log(`${action} simulation ${simulationId}:`, data.message)
         await fetchSimulations() // Refresh simulation list
         
+        // Initialize real-time data when starting a simulation
+        if (action === 'start') {
+          try {
+            console.log(`🚀 Initializing real-time data for simulation ${simulationId}`)
+            const initResponse = await fetch(`/api/v2/realtime-data/simulation/${simulationId}/initialize`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            })
+            
+            if (initResponse.ok) {
+              console.log(`✅ Real-time data initialized for simulation ${simulationId}`)
+            } else {
+              console.log(`⚠️ Real-time data initialization failed, will use fallback`)
+            }
+          } catch (initErr) {
+            console.log(`⚠️ Real-time data initialization error:`, initErr)
+          }
+        }
+        
         // Clear details if stopping
         if (action === 'stop') {
           setSimulationDetails(prev => {
@@ -530,6 +558,57 @@ const SimulationView = () => {
         ))
         console.log(`Mock ${action} simulation ${simulationId} (backend unavailable)`)
       }
+    }
+  }
+
+  const handleTimeAccelerationChange = async (simulationId, acceleration) => {
+    console.log(`🎛️ Acceleration button clicked: ${acceleration}x for simulation ${simulationId}`)
+    
+    try {
+      const url = `/api/v2/realtime-data/simulation/${simulationId}/acceleration`
+      console.log(`📡 Making request to: ${url}`)
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ acceleration })
+      })
+      
+      console.log(`📊 Response status: ${response.status}`)
+      
+      const data = await response.json()
+      console.log(`📋 Response data:`, data)
+      
+      if (data.success) {
+        setTimeAcceleration(acceleration)
+        console.log(`✅ Changed simulation ${simulationId} acceleration to ${acceleration}x`)
+        
+        // Update the real-time data to reflect new acceleration
+        setRealTimeData(prev => ({
+          ...prev,
+          timeAcceleration: acceleration
+        }))
+      } else {
+        console.error('❌ Failed to change time acceleration:', data.message)
+        // Try fallback anyway
+        setTimeAcceleration(acceleration)
+        setRealTimeData(prev => ({
+          ...prev,
+          timeAcceleration: acceleration
+        }))
+      }
+    } catch (err) {
+      console.error('⚠️ Error changing time acceleration:', err)
+      
+      // Fallback: Update acceleration locally for demo purposes
+      setTimeAcceleration(acceleration)
+      setRealTimeData(prev => ({
+        ...prev,
+        timeAcceleration: acceleration
+      }))
+      console.log(`🔄 Mock acceleration change to ${acceleration}x (backend unavailable)`)
     }
   }
 
@@ -993,6 +1072,39 @@ const SimulationView = () => {
                             </button>
                           )}
                         </div>
+                        
+                        {/* Time Acceleration Controls - only show for running simulations */}
+                        {simulation.status === 'running' && (
+                          <div className="flex items-center space-x-2 ml-4 border-l border-gray-600 pl-4">
+                            <span className="text-xs text-gray-400">Speed:</span>
+                            <div className="flex space-x-1">
+                              {[0.1, 0.5, 1, 5, 10, 60, 300, 3600].map((speed) => (
+                                <button
+                                  key={speed}
+                                  onClick={() => {
+                                    console.log(`🎮 Button clicked for sim ${simulation.id} at speed ${speed}x`)
+                                    handleTimeAccelerationChange(simulation.id, speed)
+                                  }}
+                                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                                    (realTimeData?.timeAcceleration || timeAcceleration) === speed
+                                      ? 'bg-cyan-600 text-white'
+                                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                  }`}
+                                  title={`${speed === 0.1 ? '0.1x' : speed === 0.5 ? '0.5x' : speed >= 60 ? `${speed/60}min` : speed + 'x'} speed`}
+                                >
+                                  {speed === 0.1 ? '0.1x' : 
+                                   speed === 0.5 ? '0.5x' : 
+                                   speed === 1 ? '1x' :
+                                   speed === 5 ? '5x' :
+                                   speed === 10 ? '10x' :
+                                   speed === 60 ? '1m' :
+                                   speed === 300 ? '5m' : 
+                                   speed === 3600 ? '1h' : speed + 'x'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

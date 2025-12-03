@@ -251,9 +251,14 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
     
     // Current time indicator - moves with simulation time
     const realTimeSeconds = Date.now() / 1000
-    const timeAcceleration = simulationData.timeAcceleration || 3600
-    const simulatedTime = currentSimTime + ((realTimeSeconds % 3600) * (timeAcceleration / 3600))
-    const timeProgressInWindow = (simulatedTime - startTime) / timeWindow
+    const timeAcceleration = simulationData.timeAcceleration || 1
+    const realTimeStart = animationTime / 1000  // Use animation time for consistency
+    
+    // Calculate simulated time progression based on acceleration
+    const timeSinceStart = realTimeStart - (realTimeStart % 60) // Reset every minute for smooth animation
+    const simulatedTime = currentSimTime + (timeSinceStart * timeAcceleration / 60) % timeWindow
+    
+    const timeProgressInWindow = simulatedTime / timeWindow
     const currentTimeX = 80 + (timeProgressInWindow * (width - 100))
     
     // Clamp to visible area
@@ -353,7 +358,7 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
         onWheel={handleWheel}
       />
       <div className="text-xs text-gray-400 mt-1 font-mono">
-        Timeline shows next hour • Red line = current time • Scroll to view all satellites
+        Timeline shows next hour • Red line = current time • Speed: {simulationData?.timeAcceleration || 1}x • Scroll to view all satellites
       </div>
     </div>
   )
