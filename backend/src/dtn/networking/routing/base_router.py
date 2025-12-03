@@ -10,7 +10,7 @@ from typing import List, Dict, Optional, Any, Set
 from datetime import datetime, timedelta
 import logging
 
-from ...core.bundle import Bundle, BundleStore
+from ...core.bundle import Bundle, BundleStore, BundleDropStrategy
 from ...orbital.contact_prediction import ContactWindow
 
 logger = logging.getLogger(__name__)
@@ -92,9 +92,24 @@ class RoutingDecision:
 class BaseRouter(ABC):
     """Abstract base class for DTN routing algorithms."""
     
-    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024):
+    def __init__(
+        self, 
+        node_id: str, 
+        buffer_size: int = 10 * 1024 * 1024,
+        drop_strategy: str = "oldest"
+    ):
         self.node_id = node_id
-        self.bundle_store = BundleStore(max_size=buffer_size)
+        
+        # Convert string to enum
+        strategy_map = {
+            "oldest": BundleDropStrategy.OLDEST_FIRST,
+            "largest": BundleDropStrategy.LARGEST_FIRST,
+            "random": BundleDropStrategy.RANDOM,
+            "shortest_ttl": BundleDropStrategy.SHORTEST_TTL
+        }
+        
+        bundle_drop_strategy = strategy_map.get(drop_strategy, BundleDropStrategy.OLDEST_FIRST)
+        self.bundle_store = BundleStore(max_size=buffer_size, drop_strategy=bundle_drop_strategy)
         self.metrics = RoutingMetrics()
         self.routing_table: Dict[str, Any] = {}
         self.neighbor_nodes: Set[str] = set()
@@ -250,6 +265,10 @@ class BaseRouter(ABC):
     def get_buffer_utilization(self) -> float:
         """Get current buffer utilization percentage."""
         return self.bundle_store.utilization
+    
+    def get_buffer_info(self) -> Dict[str, Any]:
+        """Get detailed buffer information including drop strategy."""
+        return self.bundle_store.get_drop_strategy_info()
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get routing performance metrics."""

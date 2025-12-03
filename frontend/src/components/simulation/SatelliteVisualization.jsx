@@ -819,6 +819,14 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
           <div className="space-y-1 text-xs">
             <div>ID: {selectedSatellite}</div>
             <div>STATUS: TRACKING</div>
+            {simulationData?.satellites?.[selectedSatellite] && (
+              <>
+                <div>BUFFER: {(simulationData.satellites[selectedSatellite].buffer_utilization * 100).toFixed(1)}%</div>
+                <div>BUNDLES: {simulationData.satellites[selectedSatellite].bundles_stored || 0}</div>
+                <div>DROP STRATEGY: {simulationData.satellites[selectedSatellite].buffer_drop_strategy?.toUpperCase() || 'OLDEST'}</div>
+                <div>DROPPED: {simulationData.satellites[selectedSatellite].bundles_dropped || 0}</div>
+              </>
+            )}
             <div className="text-green-400 cursor-pointer" onClick={() => setSelectedSatellite(null)}>
               [CLEAR TARGET]
             </div>

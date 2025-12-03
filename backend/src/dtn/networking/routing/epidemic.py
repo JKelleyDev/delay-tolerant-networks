@@ -23,8 +23,8 @@ class EpidemicRouter(BaseRouter):
     Bundles are replicated to nodes that haven't seen them before.
     """
     
-    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024):
-        super().__init__(node_id, buffer_size)
+    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024, drop_strategy: str = "oldest"):
+        super().__init__(node_id, buffer_size, drop_strategy)
         
         # Epidemic-specific state
         self.summary_vector: Dict[str, datetime] = {}  # bundle_id -> timestamp

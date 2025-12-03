@@ -26,8 +26,8 @@ class SprayAndWaitRouter(BaseRouter):
     This provides a good trade-off between delivery probability and overhead.
     """
     
-    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024, spray_copies: int = 6):
-        super().__init__(node_id, buffer_size)
+    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024, spray_copies: int = 6, drop_strategy: str = "oldest"):
+        super().__init__(node_id, buffer_size, drop_strategy)
         
         # Spray and Wait parameters
         self.L = spray_copies  # Initial number of copies to spray

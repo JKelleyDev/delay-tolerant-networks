@@ -116,6 +116,7 @@ class ExperimentConfig(BaseModel):
     bundle_size: int = Field(default=1024, gt=0, description="Bundle payload size (bytes)")
     bundle_rate: float = Field(default=1.0, gt=0, description="Bundle generation rate (bundles/second)")
     buffer_size: int = Field(default=10*1024*1024, gt=0, description="Node buffer size (bytes)")
+    buffer_drop_strategy: str = Field(default="oldest", description="Buffer drop strategy: oldest/largest/random/shortest_ttl")
 
 
 class SimulationConfig(BaseModel):

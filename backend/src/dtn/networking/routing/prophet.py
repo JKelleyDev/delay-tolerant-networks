@@ -24,8 +24,8 @@ class ProphetRouter(BaseRouter):
     - Aging (predictability decreases over time without encounters)
     """
     
-    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024):
-        super().__init__(node_id, buffer_size)
+    def __init__(self, node_id: str, buffer_size: int = 10 * 1024 * 1024, drop_strategy: str = "oldest"):
+        super().__init__(node_id, buffer_size, drop_strategy)
         
         # PRoPHET parameters (from RFC 6693)
         self.p_init = 0.75  # Initial predictability when first encountered

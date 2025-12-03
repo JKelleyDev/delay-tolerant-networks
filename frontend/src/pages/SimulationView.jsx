@@ -43,6 +43,7 @@ const SimulationView = () => {
   const [bundleSize, setBundleSize] = useState(1)
   const [bundleTTL, setBundleTTL] = useState(3600)
   const [bufferSize, setBufferSize] = useState(100)
+  const [bufferDropStrategy, setBufferDropStrategy] = useState('oldest')
 
   // Fetch data on component mount
   useEffect(() => {
@@ -377,7 +378,8 @@ const SimulationView = () => {
         traffic_pattern: trafficPattern,
         bundle_size_kb: bundleSize,
         bundle_ttl_seconds: bundleTTL,
-        satellite_buffer_size_kb: bufferSize
+        satellite_buffer_size_kb: bufferSize,
+        buffer_drop_strategy: bufferDropStrategy
       }
 
       const response = await fetch('/api/v2/simulation/create', {
@@ -398,6 +400,7 @@ const SimulationView = () => {
         setBundleSize(1)
         setBundleTTL(3600)
         setBufferSize(100)
+        setBufferDropStrategy('oldest')
         setWeatherEnabled(false)
         setWeatherSeed('')
         await fetchSimulations() // Refresh simulation list
@@ -419,6 +422,7 @@ const SimulationView = () => {
         bundle_size_kb: bundleSize,
         bundle_ttl_seconds: bundleTTL,
         satellite_buffer_size_kb: bufferSize,
+        buffer_drop_strategy: bufferDropStrategy,
         weather_enabled: weatherEnabled,
         status: 'created',
         created_at: new Date().toISOString()
@@ -431,6 +435,7 @@ const SimulationView = () => {
       setBundleSize(1)
       setBundleTTL(3600)
       setBufferSize(100)
+      setBufferDropStrategy('oldest')
       setWeatherEnabled(false)
       setWeatherSeed('')
       console.log('Created mock simulation (backend unavailable):', mockSimulation)
@@ -672,6 +677,23 @@ const SimulationView = () => {
                       Storage capacity per satellite for bundle buffering
                     </div>
                   </div>
+
+                  <div>
+                    <label className="form-label text-xs">Buffer Drop Strategy</label>
+                    <select
+                      value={bufferDropStrategy}
+                      onChange={(e) => setBufferDropStrategy(e.target.value)}
+                      className="form-input w-full text-sm"
+                    >
+                      <option value="oldest">Oldest First</option>
+                      <option value="largest">Largest First</option>
+                      <option value="shortest_ttl">Shortest TTL</option>
+                      <option value="random">Random</option>
+                    </select>
+                    <div className="mt-1 text-xs text-gray-400">
+                      Strategy for dropping bundles when buffer is full
+                    </div>
+                  </div>
                   
                   <div className="text-xs bg-blue-900 bg-opacity-30 p-2 rounded">
                     <div className="text-blue-300 mb-1">Configuration Impact:</div>
@@ -679,6 +701,7 @@ const SimulationView = () => {
                       <div>• Larger bundles = higher transmission delay</div>
                       <div>• Shorter TTL = more aggressive routing decisions</div>
                       <div>• Buffer size affects store-and-forward capacity</div>
+                      <div>• Drop strategy: Oldest=FIFO, Largest=space-efficient, TTL=deadline-aware</div>
                       <div>• Traffic patterns influence network congestion</div>
                     </div>
                   </div>
@@ -833,7 +856,7 @@ const SimulationView = () => {
                       <div className="flex-1">
                         <h3 className="font-semibold text-white">{simulation.name}</h3>
                         <p className="text-sm text-gray-400">
-                          {simulation.constellation} • {simulation.routing_algorithm}
+                          {simulation.constellation} • {simulation.routing_algorithm} • {simulation.buffer_drop_strategy || 'oldest'} drop
                         </p>
                         
                         {/* Live status details for running simulations */}

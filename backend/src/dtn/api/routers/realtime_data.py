@@ -95,7 +95,9 @@ class SimulationDataGenerator:
                 'bundles_stored': bundles_stored,
                 'contacts': random.randint(0, 3),
                 'altitude': altitude,
-                'inclination': inclination
+                'inclination': inclination,
+                'buffer_drop_strategy': random.choice(['oldest', 'largest', 'random', 'shortest_ttl']),
+                'bundles_dropped': random.randint(0, 5)
             }
         
         return satellites

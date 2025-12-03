@@ -121,6 +121,10 @@ const MilitaryHUD = ({ simulationData, isRunning, selectedSatellite }) => {
               <span className="text-gray-300">Overhead:</span>
               <span className="text-orange-400">{(simulationData?.metrics?.overhead || 0).toFixed(1)}x</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Drop Strategy:</span>
+              <span className="text-purple-400">{simulationData?.buffer_drop_strategy || 'oldest'}</span>
+            </div>
           </div>
         </div>
       </div>
