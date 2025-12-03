@@ -321,11 +321,50 @@ class SimulationDataGenerator:
     
     def get_current_state(self) -> Dict[str, Any]:
         """Get current simulation state."""
+        # Generate timeline contacts with proper timestamps for the ContactGanttChart
+        timeline_contacts = []
+        current_time = datetime.now()
+        
+        # Current contacts with proper timestamps
+        for contact in self.contacts:
+            timeline_contacts.append({
+                **contact,
+                'start_time': current_time.isoformat(),
+                'end_time': (current_time + timedelta(seconds=contact.get('duration_seconds', 300))).isoformat(),
+                'status': 'active' if contact.get('isActive', False) else 'scheduled'
+            })
+        
+        # Add future predicted contacts
+        for i in range(15):  # Generate 15 future contacts
+            start_time = current_time + timedelta(minutes=random.randint(1, 60))
+            duration = random.uniform(180, 600)  # 3-10 minutes
+            end_time = start_time + timedelta(seconds=duration)
+            
+            sat_ids = list(self.satellites.keys())
+            if len(sat_ids) >= 2:
+                source_sat = random.choice(sat_ids)
+                target_sat = random.choice([s for s in sat_ids if s != source_sat])
+                
+                timeline_contacts.append({
+                    'contact_id': f"future_{i}_{int(start_time.timestamp())}",
+                    'source_id': source_sat,
+                    'target_id': target_sat,
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                    'duration_seconds': duration,
+                    'status': 'scheduled',
+                    'isActive': False,
+                    'hasData': random.random() < 0.4,
+                    'elevation_angle': random.uniform(15, 70),
+                    'data_rate': random.uniform(50e6, 200e6)
+                })
+        
         return {
             'simulation_id': self.simulation_id,
             'satellites': self.satellites,
             'ground_stations': self.ground_stations,
-            'contacts': self.contacts,
+            'contacts': self.contacts,  # Current contacts for 3D visualization
+            'timelineContacts': timeline_contacts,  # Timeline contacts for ContactGanttChart
             'bundles': self.bundles,
             'metrics': self.metrics,
             'simTime': self._format_sim_time(),

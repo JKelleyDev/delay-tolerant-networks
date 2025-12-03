@@ -3,6 +3,18 @@ import React, { useEffect, useRef, useState } from 'react'
 const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => {
   const canvasRef = useRef(null)
   const [scrollOffset, setScrollOffset] = useState(0)
+  const [animationTime, setAnimationTime] = useState(Date.now())
+  
+  // Update animation time for moving timeline
+  useEffect(() => {
+    if (!isRunning) return
+    
+    const interval = setInterval(() => {
+      setAnimationTime(Date.now())
+    }, 100) // Update 10 times per second for smooth animation
+    
+    return () => clearInterval(interval)
+  }, [isRunning])
   
   useEffect(() => {
     if (!canvasRef.current || !simulationData?.satellites || typeof simulationData.satellites !== 'object') return
@@ -18,8 +30,8 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
     
     // Chart parameters
     const timeWindow = 3600 // 1 hour time window in seconds
-    const currentTime = simulationData.currentSimTime || 0
-    const startTime = currentTime
+    const currentSimTime = simulationData.currentSimTime || 0
+    const startTime = currentSimTime
     const endTime = startTime + timeWindow
     
     const satellites = Object.keys(simulationData.satellites)
@@ -77,7 +89,41 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
           contact.source_id === satId || contact.target_id === satId
         ) : []
       
-      contacts.forEach(contact => {
+      // Generate predicted future contacts if we don't have enough
+      const generatePredictedContacts = (satId, currentTime) => {
+        const predictedContacts = []
+        const satellites = Object.keys(simulationData.satellites)
+        
+        // Generate future contacts for next hour
+        for (let t = 0; t < timeWindow; t += 600) { // Every 10 minutes
+          if (Math.random() > 0.4) { // 60% chance of contact opportunity
+            const targetSat = satellites[Math.floor(Math.random() * satellites.length)]
+            if (targetSat !== satId) {
+              const contactStart = currentTime + t + Math.random() * 300 // Some randomness
+              const duration = 180 + Math.random() * 420 // 3-10 minutes
+              
+              predictedContacts.push({
+                source_id: satId,
+                target_id: targetSat,
+                start_time: contactStart,
+                end_time: contactStart + duration,
+                duration_seconds: duration,
+                status: 'scheduled',
+                isActive: false,
+                hasData: Math.random() > 0.6,
+                elevation_angle: 15 + Math.random() * 55
+              })
+            }
+          }
+        }
+        return predictedContacts
+      }
+      
+      // Add predicted contacts if we don't have enough real ones
+      const predictedContacts = contacts.length < 3 ? generatePredictedContacts(satId, currentSimTime) : []
+      const allContacts = [...contacts, ...predictedContacts]
+      
+      allContacts.forEach(contact => {
         // Handle both timestamp strings and Date objects
         let contactStart, contactEnd
         if (contact.start_time instanceof Date) {
@@ -86,8 +132,11 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
         } else if (typeof contact.start_time === 'string') {
           contactStart = new Date(contact.start_time).getTime() / 1000
           contactEnd = new Date(contact.end_time).getTime() / 1000
+        } else if (typeof contact.start_time === 'number') {
+          contactStart = contact.start_time
+          contactEnd = contact.end_time || (contactStart + (contact.duration_seconds || 300))
         } else {
-          // Fallback for relative time contacts
+          // Final fallback
           contactStart = startTime + (Math.random() * timeWindow / 2)
           contactEnd = contactStart + (contact.duration_seconds || 300)
         }
@@ -134,10 +183,26 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
         }
         
         // Add progress indicator for active contacts
-        if ((contact.status === 'active' || contact.isActive) && contact.progress !== undefined) {
-          const progressWidth = contactWidth * contact.progress
+        if (contact.status === 'active' || contact.isActive) {
+          let progress = contact.progress
+          
+          // Calculate progress based on current time if not provided
+          if (progress === undefined) {
+            const contactDuration = contactEnd - contactStart
+            const elapsed = simulatedTime - contactStart
+            progress = Math.max(0, Math.min(1, elapsed / contactDuration))
+          }
+          
+          const progressWidth = contactWidth * progress
           ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
           ctx.fillRect(x1, y + 2, progressWidth, rowHeight - 6)
+          
+          // Add progress percentage text
+          if (contactWidth > 50 && progress > 0) {
+            ctx.fillStyle = '#fff'
+            ctx.font = '7px Courier New'
+            ctx.fillText(`${(progress * 100).toFixed(0)}%`, x1 + contactWidth - 20, y + 15)
+          }
         }
       })
       
@@ -184,15 +249,31 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
       }
     })
     
-    // Current time indicator
+    // Current time indicator - moves with simulation time
+    const realTimeSeconds = Date.now() / 1000
+    const timeAcceleration = simulationData.timeAcceleration || 3600
+    const simulatedTime = currentSimTime + ((realTimeSeconds % 3600) * (timeAcceleration / 3600))
+    const timeProgressInWindow = (simulatedTime - startTime) / timeWindow
+    const currentTimeX = 80 + (timeProgressInWindow * (width - 100))
+    
+    // Clamp to visible area
+    const clampedTimeX = Math.max(80, Math.min(currentTimeX, width - 20))
+    
     ctx.strokeStyle = '#ff0000'
     ctx.lineWidth = 2
     ctx.setLineDash([5, 5])
     ctx.beginPath()
-    ctx.moveTo(80, 20)
-    ctx.lineTo(80, height - 10)
+    ctx.moveTo(clampedTimeX, 20)
+    ctx.lineTo(clampedTimeX, height - 10)
     ctx.stroke()
     ctx.setLineDash([])
+    
+    // Add current time label
+    ctx.fillStyle = '#ff0000'
+    ctx.font = 'bold 10px Courier New'
+    const timeStr = simulationData.simTime || '00:00:00'
+    const labelX = Math.min(clampedTimeX + 5, width - 120)
+    ctx.fillText(`NOW: ${timeStr}`, labelX, 15)
     
     // Legend
     ctx.fillStyle = '#fff'
@@ -241,7 +322,7 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
       ctx.fillText(`${actualScrollOffset + 1}-${Math.min(actualScrollOffset + maxVisibleRows, satellites.length)} of ${satellites.length}`, width - 80, height - 5)
     }
     
-  }, [simulationData, selectedSatellite, scrollOffset])
+  }, [simulationData, selectedSatellite, scrollOffset, animationTime])
   
   const handleWheel = (event) => {
     event.preventDefault()
