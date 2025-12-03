@@ -63,6 +63,10 @@ const MilitaryHUD = ({ simulationData, isRunning, selectedSatellite }) => {
               <span className="text-gray-300">Throughput:</span>
               <span className="text-purple-400">{networkThroughput.toFixed(1)} Mbps</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Buffer Util:</span>
+              <span className="text-orange-400">{((simulationData?.metrics?.avgBufferUtilization || 0) * 100).toFixed(1)}%</span>
+            </div>
           </div>
         </div>
 

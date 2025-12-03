@@ -156,13 +156,26 @@ class Bundle:
         )
 
 
+class BundleDropStrategy(Enum):
+    """Buffer drop strategies."""
+    OLDEST_FIRST = "oldest"
+    LARGEST_FIRST = "largest"
+    RANDOM = "random"
+    SHORTEST_TTL = "shortest_ttl"
+
+
 class BundleStore:
     """Bundle storage and management."""
     
-    def __init__(self, max_size: int = 100 * 1024 * 1024):  # 100MB default
+    def __init__(
+        self, 
+        max_size: int = 100 * 1024 * 1024,  # 100MB default
+        drop_strategy: BundleDropStrategy = BundleDropStrategy.OLDEST_FIRST
+    ):
         self.max_size = max_size
         self.bundles: Dict[str, Bundle] = {}
         self.size_used = 0
+        self.drop_strategy = drop_strategy
     
     def store(self, bundle: Bundle) -> bool:
         """Store a bundle if space available."""
@@ -209,11 +222,34 @@ class BundleStore:
         return len(expired_ids)
     
     def _make_space(self, required_space: int) -> None:
-        """Make space by removing oldest bundles."""
-        sorted_bundles = sorted(
-            self.bundles.items(),
-            key=lambda x: x[1].creation_timestamp
-        )
+        """Make space by removing bundles according to drop strategy."""
+        if not self.bundles:
+            return
+            
+        if self.drop_strategy == BundleDropStrategy.OLDEST_FIRST:
+            # Remove oldest bundles first
+            sorted_bundles = sorted(
+                self.bundles.items(),
+                key=lambda x: x[1].creation_timestamp
+            )
+        elif self.drop_strategy == BundleDropStrategy.LARGEST_FIRST:
+            # Remove largest bundles first to free most space quickly
+            sorted_bundles = sorted(
+                self.bundles.items(),
+                key=lambda x: x[1].payload_size,
+                reverse=True
+            )
+        elif self.drop_strategy == BundleDropStrategy.SHORTEST_TTL:
+            # Remove bundles with shortest remaining lifetime first
+            sorted_bundles = sorted(
+                self.bundles.items(),
+                key=lambda x: x[1].remaining_lifetime.total_seconds()
+            )
+        else:  # RANDOM
+            import random
+            bundle_items = list(self.bundles.items())
+            random.shuffle(bundle_items)
+            sorted_bundles = bundle_items
         
         space_freed = 0
         for bundle_id, bundle in sorted_bundles:
@@ -231,6 +267,17 @@ class BundleStore:
     def bundle_count(self) -> int:
         """Number of stored bundles."""
         return len(self.bundles)
+    
+    def get_drop_strategy_info(self) -> Dict[str, Any]:
+        """Get information about current drop strategy and buffer state."""
+        return {
+            'drop_strategy': self.drop_strategy.value,
+            'utilization': self.utilization,
+            'bundle_count': self.bundle_count,
+            'size_used': self.size_used,
+            'max_size': self.max_size,
+            'free_space': self.max_size - self.size_used
+        }
 
 
 def create_test_bundle(source: str, dest: str, payload: str = "Test message") -> Bundle:

@@ -189,6 +189,11 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       const y = radius * Math.cos(phi)
       const z = radius * Math.sin(phi) * Math.sin(theta)
       
+      // Validate coordinates
+      const validX = Number.isFinite(x) ? x : 0
+      const validY = Number.isFinite(y) ? y : 0  
+      const validZ = Number.isFinite(z) ? z : 0
+      
       // Ground station antenna
       const gsGeometry = new THREE.ConeGeometry(30, 100, 8)
       const gsMaterial = new THREE.MeshPhongMaterial({
@@ -197,7 +202,7 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         emissiveIntensity: 0.3
       })
       const gsAntenna = new THREE.Mesh(gsGeometry, gsMaterial)
-      gsAntenna.position.set(x, y, z)
+      gsAntenna.position.set(validX, validY, validZ)
       gsAntenna.lookAt(0, 0, 0)
       
       // Rotating dish animation
@@ -328,9 +333,12 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       
       const satellite = new THREE.Mesh(satGeometry, satMaterial)
       
-      // Position satellite
+      // Position satellite with NaN validation
       const position = satData.position || { x: 0, y: 0, z: 0 }
-      satellite.position.set(position.x, position.y, position.z)
+      const validX = Number.isFinite(position.x) ? position.x : 0
+      const validY = Number.isFinite(position.y) ? position.y : 0
+      const validZ = Number.isFinite(position.z) ? position.z : 0
+      satellite.position.set(validX, validY, validZ)
       
       // Add satellite label
       const canvas = document.createElement('canvas')
@@ -354,14 +362,18 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       
       if (isTransmitting) {
         // Calculate satellite's footprint on Earth surface
-        const satAltitude = Math.sqrt(position.x ** 2 + position.y ** 2 + position.z ** 2) - 6371
+        const satDistance = Math.sqrt(validX ** 2 + validY ** 2 + validZ ** 2)
+        const satAltitude = Math.max(0, satDistance - 6371) // Ensure positive altitude
         const earthRadius = 6371
         
-        // Calculate footprint radius (coverage circle on Earth)
-        const footprintRadius = earthRadius * Math.acos(earthRadius / (earthRadius + satAltitude))
+        // Calculate footprint radius (coverage circle on Earth) with validation
+        const altitudeRatio = earthRadius / (earthRadius + satAltitude)
+        const footprintRadius = altitudeRatio <= 1 && altitudeRatio > 0 
+          ? earthRadius * Math.acos(altitudeRatio)
+          : 1000 // Default footprint radius if calculation fails
         
         // Project footprint onto Earth surface
-        const satToEarth = new THREE.Vector3(position.x, position.y, position.z).normalize()
+        const satToEarth = new THREE.Vector3(validX, validY, validZ).normalize()
         const footprintCenter = satToEarth.clone().multiplyScalar(earthRadius)
         
         // Create circular footprint on Earth surface
@@ -385,7 +397,7 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         }
         
         // Add transmission beam from satellite to Earth footprint
-        const satPos = new THREE.Vector3(position.x, position.y, position.z)
+        const satPos = new THREE.Vector3(validX, validY, validZ)
         const earthPos = footprintCenter.clone()
         
         // Create multiple beam lines for a cone effect
@@ -434,8 +446,8 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         satelliteGroupRef.current.add(beamLines)
       }
       
-      // Add bundle storage indicator
-      if ((satData.bundles_stored || 0) > 0) {
+      // Add bundle storage indicator with buffer fill bar
+      if ((satData.bundles_stored || 0) > 0 || satData.buffer_utilization !== undefined) {
         const bundleGeometry = new THREE.SphereGeometry(20, 8, 8)
         const bundleMaterial = new THREE.MeshBasicMaterial({
           color: 0xffaa00,
@@ -446,6 +458,67 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         bundleIndicator.position.copy(satellite.position)
         bundleIndicator.position.y += 100
         satelliteGroupRef.current.add(bundleIndicator)
+        
+        // Add buffer fill bar above satellite
+        const bufferUtilization = satData.buffer_utilization || 0 // 0.0 to 1.0
+        const maxBufferHeight = 80
+        const filledHeight = maxBufferHeight * bufferUtilization
+        
+        // Background bar (empty buffer)
+        const emptyBarGeometry = new THREE.BoxGeometry(8, maxBufferHeight, 8)
+        const emptyBarMaterial = new THREE.MeshBasicMaterial({
+          color: 0x333333,
+          transparent: true,
+          opacity: 0.6
+        })
+        const emptyBar = new THREE.Mesh(emptyBarGeometry, emptyBarMaterial)
+        emptyBar.position.copy(satellite.position)
+        emptyBar.position.x += 80 // Offset to the side
+        emptyBar.position.y += maxBufferHeight / 2
+        satelliteGroupRef.current.add(emptyBar)
+        
+        // Filled bar (used buffer)
+        if (filledHeight > 0) {
+          const filledBarGeometry = new THREE.BoxGeometry(8, filledHeight, 8)
+          // Color based on utilization: green -> yellow -> red
+          let barColor = 0x00ff00 // Green
+          if (bufferUtilization > 0.7) {
+            barColor = 0xff0000 // Red
+          } else if (bufferUtilization > 0.5) {
+            barColor = 0xffaa00 // Orange
+          } else if (bufferUtilization > 0.3) {
+            barColor = 0xffff00 // Yellow
+          }
+          
+          const filledBarMaterial = new THREE.MeshBasicMaterial({
+            color: barColor,
+            transparent: true,
+            opacity: 0.8
+          })
+          const filledBar = new THREE.Mesh(filledBarGeometry, filledBarMaterial)
+          filledBar.position.copy(satellite.position)
+          filledBar.position.x += 80 // Offset to the side
+          filledBar.position.y += filledHeight / 2
+          satelliteGroupRef.current.add(filledBar)
+        }
+        
+        // Buffer utilization label
+        const bufferCanvas = document.createElement('canvas')
+        const bufferContext = bufferCanvas.getContext('2d')
+        bufferCanvas.width = 128
+        bufferCanvas.height = 32
+        bufferContext.fillStyle = '#00ff88'
+        bufferContext.font = '16px "Courier New", monospace'
+        bufferContext.fillText(`${(bufferUtilization * 100).toFixed(0)}%`, 10, 20)
+        
+        const bufferTexture = new THREE.CanvasTexture(bufferCanvas)
+        const bufferLabelMaterial = new THREE.SpriteMaterial({ map: bufferTexture })
+        const bufferLabel = new THREE.Sprite(bufferLabelMaterial)
+        bufferLabel.scale.set(200, 50, 1)
+        bufferLabel.position.copy(satellite.position)
+        bufferLabel.position.x += 80
+        bufferLabel.position.y += maxBufferHeight + 30
+        satelliteGroupRef.current.add(bufferLabel)
       }
       
       satellite.userData = { id: satId, data: satData }
@@ -460,17 +533,54 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
 
   // Update contact lines and bundle routing
   useEffect(() => {
-    if (!contactLinesRef.current || !simulationData?.contacts) return
+    if (!contactLinesRef.current || !simulationData?.contacts || !Array.isArray(simulationData.contacts)) return
 
-    // Clear existing contact lines
-    contactLinesRef.current.clear()
+    try {
+      // Clear existing contact lines
+      contactLinesRef.current.clear()
 
-    // Draw active contact lines with sci-fi beam effects
-    simulationData.contacts.forEach((contact, index) => {
-      if (contact.isActive) {
+      // Draw active contact lines with sci-fi beam effects
+      simulationData.contacts.forEach((contact, index) => {
+      if (contact && contact.isActive && contact.source_id && contact.target_id) {
+        // Get position from satellite data using IDs
+        let sourcePos = { x: 0, y: 0, z: 0 }
+        let targetPos = { x: 0, y: 0, z: 0 }
+        
+        // Check if source is a satellite
+        if (simulationData.satellites && simulationData.satellites[contact.source_id]) {
+          sourcePos = simulationData.satellites[contact.source_id].position || sourcePos
+        }
+        
+        // Check if target is a satellite  
+        if (simulationData.satellites && simulationData.satellites[contact.target_id]) {
+          targetPos = simulationData.satellites[contact.target_id].position || targetPos
+        } else if (simulationData.ground_stations && simulationData.ground_stations[contact.target_id]) {
+          // Convert ground station lat/lon to 3D coordinates
+          const gs = simulationData.ground_stations[contact.target_id]
+          if (gs && typeof gs.lat === 'number' && typeof gs.lon === 'number') {
+            const phi = (90 - gs.lat) * (Math.PI / 180)
+            const theta = (gs.lon + 180) * (Math.PI / 180)
+            const radius = 6371 + (gs.elevation || 0) / 1000
+            
+            const x = -(radius * Math.sin(phi) * Math.cos(theta))
+            const y = radius * Math.cos(phi)
+            const z = radius * Math.sin(phi) * Math.sin(theta)
+            
+            targetPos = { x, y, z }
+          }
+        }
+        
+        const sourceX = Number.isFinite(sourcePos.x) ? sourcePos.x : 0
+        const sourceY = Number.isFinite(sourcePos.y) ? sourcePos.y : 0
+        const sourceZ = Number.isFinite(sourcePos.z) ? sourcePos.z : 0
+        
+        const targetX = Number.isFinite(targetPos.x) ? targetPos.x : 0
+        const targetY = Number.isFinite(targetPos.y) ? targetPos.y : 0
+        const targetZ = Number.isFinite(targetPos.z) ? targetPos.z : 0
+        
         const points = [
-          new THREE.Vector3(contact.source.x, contact.source.y, contact.source.z),
-          new THREE.Vector3(contact.target.x, contact.target.y, contact.target.z)
+          new THREE.Vector3(sourceX, sourceY, sourceZ),
+          new THREE.Vector3(targetX, targetY, targetZ)
         ]
         
         const geometry = new THREE.BufferGeometry().setFromPoints(points)
@@ -520,50 +630,132 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       }
     })
     
-    // Add packet path visualization if enabled
+    // Enhanced packet path visualization with animated arcs
     if (simulationData?.packetPaths) {
-      simulationData.packetPaths.forEach(path => {
-        // Draw complete path with different colors for each hop
-        const pathColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff]
+      simulationData.packetPaths.forEach((path, pathIndex) => {
+        // Draw complete path with different colors for each hop and smooth curves
+        const pathColors = [0xff3366, 0x33ff66, 0x3366ff, 0xffff33, 0xff33ff, 0x33ffff]
         
         path.hops.forEach((hop, hopIndex) => {
           if (hopIndex < path.hops.length - 1) {
-            const startPos = new THREE.Vector3(hop.x, hop.y, hop.z)
-            const endPos = new THREE.Vector3(
-              path.hops[hopIndex + 1].x,
-              path.hops[hopIndex + 1].y,
-              path.hops[hopIndex + 1].z
-            )
+            // Validate hop coordinates
+            const hopX = Number.isFinite(hop.x) ? hop.x : 0
+            const hopY = Number.isFinite(hop.y) ? hop.y : 0
+            const hopZ = Number.isFinite(hop.z) ? hop.z : 0
             
-            const hopGeometry = new THREE.BufferGeometry().setFromPoints([startPos, endPos])
+            const nextHop = path.hops[hopIndex + 1]
+            const nextX = Number.isFinite(nextHop.x) ? nextHop.x : 0
+            const nextY = Number.isFinite(nextHop.y) ? nextHop.y : 0
+            const nextZ = Number.isFinite(nextHop.z) ? nextHop.z : 0
+            
+            const startPos = new THREE.Vector3(hopX, hopY, hopZ)
+            const endPos = new THREE.Vector3(nextX, nextY, nextZ)
+            
+            // Create curved path for more realistic bundle routing
+            const midPoint = new THREE.Vector3().lerpVectors(startPos, endPos, 0.5)
+            const distance = startPos.distanceTo(endPos)
+            const curveHeight = Math.min(distance * 0.2, 2000) // Arc height
+            
+            // Add arc to the path by moving midpoint outward from Earth
+            const earthCenter = new THREE.Vector3(0, 0, 0)
+            const outwardDirection = midPoint.clone().normalize()
+            midPoint.add(outwardDirection.multiplyScalar(curveHeight))
+            
+            // Create smooth curve using QuadraticBezierCurve3
+            const curve = new THREE.QuadraticBezierCurve3(startPos, midPoint, endPos)
+            const curvePoints = curve.getPoints(20) // More points for smoother curve
+            
+            const hopGeometry = new THREE.BufferGeometry().setFromPoints(curvePoints)
             const hopMaterial = new THREE.LineBasicMaterial({
               color: pathColors[hopIndex % pathColors.length],
-              linewidth: 2,
+              linewidth: 3,
               transparent: true,
-              opacity: 0.7
+              opacity: 0.8
             })
             
             const hopLine = new THREE.Line(hopGeometry, hopMaterial)
             contactLinesRef.current.add(hopLine)
             
-            // Add hop number labels
+            // Add animated bundle moving along the path
+            const bundleGeometry = new THREE.SphereGeometry(15, 8, 8)
+            const bundleMaterial = new THREE.MeshBasicMaterial({
+              color: pathColors[hopIndex % pathColors.length],
+              transparent: true,
+              opacity: 0.9
+            })
+            const movingBundle = new THREE.Mesh(bundleGeometry, bundleMaterial)
+            
+            // Animation along the curve
+            const animationTime = (Date.now() / 1000 + pathIndex * 0.5 + hopIndex * 0.2) % 2 // 2 second cycle
+            const progress = animationTime / 2 // 0 to 1
+            const currentPos = curve.getPoint(progress)
+            movingBundle.position.copy(currentPos)
+            
+            // Add glow effect trail
+            for (let i = 1; i <= 3; i++) {
+              const trailProgress = Math.max(0, progress - i * 0.1)
+              if (trailProgress > 0) {
+                const trailPos = curve.getPoint(trailProgress)
+                const trailGeometry = new THREE.SphereGeometry(10 - i * 2, 6, 6)
+                const trailMaterial = new THREE.MeshBasicMaterial({
+                  color: pathColors[hopIndex % pathColors.length],
+                  transparent: true,
+                  opacity: 0.3 - i * 0.1
+                })
+                const trail = new THREE.Mesh(trailGeometry, trailMaterial)
+                trail.position.copy(trailPos)
+                contactLinesRef.current.add(trail)
+              }
+            }
+            
+            contactLinesRef.current.add(movingBundle)
+            
+            // Add hop number labels at arc peaks
             const labelCanvas = document.createElement('canvas')
             const labelContext = labelCanvas.getContext('2d')
-            labelCanvas.width = 64
+            labelCanvas.width = 128
             labelCanvas.height = 64
             labelContext.fillStyle = '#ffffff'
-            labelContext.font = '24px "Courier New", monospace'
-            labelContext.fillText(`${hopIndex + 1}`, 20, 40)
+            labelContext.font = 'bold 20px "Courier New", monospace'
+            labelContext.fillText(`HOP ${hopIndex + 1}`, 10, 30)
+            labelContext.font = '12px "Courier New", monospace'
+            labelContext.fillText(`${path.bundle_id?.substring(0, 8) || 'BUNDLE'}`, 10, 50)
             
             const labelTexture = new THREE.CanvasTexture(labelCanvas)
-            const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture })
+            const labelMaterial = new THREE.SpriteMaterial({ 
+              map: labelTexture,
+              transparent: true,
+              opacity: 0.9
+            })
             const hopLabel = new THREE.Sprite(labelMaterial)
-            hopLabel.scale.set(200, 200, 1)
-            hopLabel.position.lerpVectors(startPos, endPos, 0.5)
+            hopLabel.scale.set(300, 150, 1)
+            hopLabel.position.copy(curve.getPoint(0.5)) // Position at curve peak
+            hopLabel.position.y += 100 // Slight offset upward
             contactLinesRef.current.add(hopLabel)
+            
+            // Add directional arrows along the path
+            for (let arrowPos = 0.2; arrowPos < 1; arrowPos += 0.3) {
+              const arrowPoint = curve.getPoint(arrowPos)
+              const nextPoint = curve.getPoint(Math.min(1, arrowPos + 0.05))
+              const direction = new THREE.Vector3().subVectors(nextPoint, arrowPoint).normalize()
+              
+              const arrowGeometry = new THREE.ConeGeometry(8, 25, 6)
+              const arrowMaterial = new THREE.MeshBasicMaterial({
+                color: pathColors[hopIndex % pathColors.length],
+                transparent: true,
+                opacity: 0.7
+              })
+              const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial)
+              arrow.position.copy(arrowPoint)
+              arrow.lookAt(nextPoint)
+              contactLinesRef.current.add(arrow)
+            }
           }
         })
       })
+    }
+    } catch (error) {
+      console.error('Error rendering contacts:', error)
     }
   }, [simulationData?.contacts, simulationData?.packetPaths])
 

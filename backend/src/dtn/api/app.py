@@ -86,11 +86,9 @@ app.add_middleware(
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Include routers (temporarily commented out)
-# app.include_router(simulation.router, prefix="/api/v2/simulation", tags=["simulation"])
-# app.include_router(constellation.router, prefix="/api/v2/constellation", tags=["constellation"])
-# app.include_router(experiment.router, prefix="/api/v2/experiment", tags=["experiment"])
-# app.include_router(realtime.router, prefix="/api/v2/realtime", tags=["realtime"])
+# Include routers
+from .routers import realtime_data
+app.include_router(realtime_data.router, prefix="/api/v2/realtime-data", tags=["realtime-data"])
 
 
 @app.get("/", response_model=APIResponse)
