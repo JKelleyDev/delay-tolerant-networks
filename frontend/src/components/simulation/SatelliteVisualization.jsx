@@ -356,11 +356,11 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       label.position.copy(satellite.position)
       label.position.y += 200
       
-      // Create Earth footprint projection (only show when transmitting)
-      const isTransmitting = (satData.contacts || 0) > 0 || (satData.bundles_stored || 0) > 0
+      // Create subtle Earth footprint projection (only show for satellites actively transferring data)
+      const isActivelyTransferring = (satData.bundles_stored || 0) > 2 && (satData.contacts || 0) > 0
       let footprintProjection = null
       
-      if (isTransmitting) {
+      if (isActivelyTransferring) {
         // Calculate satellite's footprint on Earth surface
         const satDistance = Math.sqrt(validX ** 2 + validY ** 2 + validZ ** 2)
         const satAltitude = Math.max(0, satDistance - 6371) // Ensure positive altitude
@@ -369,19 +369,19 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         // Calculate footprint radius (coverage circle on Earth) with validation
         const altitudeRatio = earthRadius / (earthRadius + satAltitude)
         const footprintRadius = altitudeRatio <= 1 && altitudeRatio > 0 
-          ? earthRadius * Math.acos(altitudeRatio)
-          : 1000 // Default footprint radius if calculation fails
+          ? earthRadius * Math.acos(altitudeRatio) * 0.7 // Reduce footprint size by 30%
+          : 800 // Smaller default footprint radius
         
         // Project footprint onto Earth surface
         const satToEarth = new THREE.Vector3(validX, validY, validZ).normalize()
-        const footprintCenter = satToEarth.clone().multiplyScalar(earthRadius)
+        const footprintCenter = satToEarth.clone().multiplyScalar(earthRadius + 10) // Slightly above Earth surface
         
-        // Create circular footprint on Earth surface
-        const footprintGeometry = new THREE.CircleGeometry(footprintRadius, 32)
+        // Create circular footprint on Earth surface - much more subtle
+        const footprintGeometry = new THREE.RingGeometry(footprintRadius * 0.8, footprintRadius, 16) // Ring instead of filled circle
         const footprintMaterial = new THREE.MeshBasicMaterial({
-          color: (satData.bundles_stored || 0) > 0 ? 0x00ff44 : 0x0088ff,
+          color: (satData.bundles_stored || 0) > 5 ? 0x00ff44 : 0x0088ff,
           transparent: true,
-          opacity: 0.6,
+          opacity: 0.25, // Much more transparent
           side: THREE.DoubleSide
         })
         
@@ -389,61 +389,36 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         footprintProjection.position.copy(footprintCenter)
         footprintProjection.lookAt(0, 0, 0) // Face away from Earth center
         
-        // Add pulsing animation for active transmission
+        // Add subtle pulsing animation for active transmission
         footprintProjection.userData = { 
           isActive: true,
-          baseOpacity: 0.6,
+          baseOpacity: 0.25,
           time: Math.random() * Math.PI * 2 // Random start phase
         }
         
-        // Add transmission beam from satellite to Earth footprint
+        // Add subtle transmission beam (only center beam, no cone)
         const satPos = new THREE.Vector3(validX, validY, validZ)
         const earthPos = footprintCenter.clone()
         
-        // Create multiple beam lines for a cone effect
-        const beamLines = new THREE.Group()
-        
-        // Main center beam
-        const centerPoints = [satPos, earthPos]
-        const centerGeometry = new THREE.BufferGeometry().setFromPoints(centerPoints)
-        const centerMaterial = new THREE.LineBasicMaterial({
-          color: (satData.bundles_stored || 0) > 0 ? 0x00ff44 : 0x0088ff,
-          linewidth: 3,
-          transparent: true,
-          opacity: 0.8
-        })
-        const centerBeam = new THREE.Line(centerGeometry, centerMaterial)
-        beamLines.add(centerBeam)
-        
-        // Add cone edge lines for beam spread
-        const beamSpread = footprintRadius * 0.3 // Beam widens as it approaches Earth
-        const perpVector1 = new THREE.Vector3(1, 0, 0).cross(satToEarth).normalize()
-        const perpVector2 = new THREE.Vector3(0, 1, 0).cross(satToEarth).normalize()
-        
-        for (let i = 0; i < 8; i++) {
-          const angle = (i / 8) * Math.PI * 2
-          const offset = perpVector1.clone().multiplyScalar(Math.cos(angle) * beamSpread)
-            .add(perpVector2.clone().multiplyScalar(Math.sin(angle) * beamSpread))
-          
-          const edgePoint = earthPos.clone().add(offset)
-          const edgePoints = [satPos, edgePoint]
-          const edgeGeometry = new THREE.BufferGeometry().setFromPoints(edgePoints)
-          const edgeMaterial = new THREE.LineBasicMaterial({
-            color: (satData.bundles_stored || 0) > 0 ? 0x00ff44 : 0x0088ff,
+        // Only show a single subtle beam for active data transfer
+        if ((satData.bundles_stored || 0) > 3) {
+          const beamPoints = [satPos, earthPos]
+          const beamGeometry = new THREE.BufferGeometry().setFromPoints(beamPoints)
+          const beamMaterial = new THREE.LineBasicMaterial({
+            color: 0x00ffaa,
             transparent: true,
-            opacity: 0.3
+            opacity: 0.4 // More subtle
           })
-          const edgeBeam = new THREE.Line(edgeGeometry, edgeMaterial)
-          beamLines.add(edgeBeam)
+          const beam = new THREE.Line(beamGeometry, beamMaterial)
+          
+          beam.userData = {
+            isActive: true,
+            baseOpacity: 0.4,
+            time: Math.random() * Math.PI * 2
+          }
+          
+          satelliteGroupRef.current.add(beam)
         }
-        
-        beamLines.userData = {
-          isActive: true,
-          baseOpacity: 0.6,
-          time: Math.random() * Math.PI * 2
-        }
-        
-        satelliteGroupRef.current.add(beamLines)
       }
       
       // Add bundle storage indicator with buffer fill bar
@@ -585,45 +560,71 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
         
         const geometry = new THREE.BufferGeometry().setFromPoints(points)
         const material = new THREE.LineBasicMaterial({
-          color: contact.hasData ? 0x00ffff : 0x004488,
-          linewidth: contact.hasData ? 3 : 1,
+          color: contact.hasData ? 0x00ff88 : 0x0088cc,
+          linewidth: contact.hasData ? 4 : 2,
           transparent: true,
-          opacity: contact.hasData ? 0.8 : 0.3
+          opacity: contact.hasData ? 0.9 : 0.5 // More visible contact lines
         })
         
         const line = new THREE.Line(geometry, material)
         contactLinesRef.current.add(line)
         
-        // Add pulsing effect for data transmission
+        // Enhanced pulsing effect for data transmission - make packets more visible
         if (contact.hasData) {
-          // Create multiple pulses for step-by-step visualization
-          const numPulses = 3
-          for (let i = 0; i < numPulses; i++) {
-            const pulseGeometry = new THREE.SphereGeometry(15, 8, 8)
-            const pulseMaterial = new THREE.MeshBasicMaterial({
-              color: 0x00ffff,
+          // Create larger, more visible data packets
+          const numPackets = 2 // Reduce number but make more prominent
+          for (let i = 0; i < numPackets; i++) {
+            // Main data packet
+            const packetGeometry = new THREE.SphereGeometry(25, 10, 10) // Larger packets
+            const packetMaterial = new THREE.MeshBasicMaterial({
+              color: 0x00ffdd,
               transparent: true,
-              opacity: 0.8 - (i * 0.2)
+              opacity: 0.9 - (i * 0.3)
             })
-            const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial)
+            const packet = new THREE.Mesh(packetGeometry, packetMaterial)
             
-            // Stagger pulse timing for step-by-step effect
-            const time = (Date.now() / 800) + (i * 0.3)
+            // Slower, more visible movement
+            const time = (Date.now() / 1200) + (i * 0.5) // Slower animation
             const progress = (time % 1)
-            pulse.position.lerpVectors(points[0], points[1], progress)
+            packet.position.lerpVectors(points[0], points[1], progress)
             
-            // Add trail effect
-            const trailGeometry = new THREE.SphereGeometry(8, 6, 6)
-            const trailMaterial = new THREE.MeshBasicMaterial({
-              color: 0x0088ff,
+            // Add glowing effect
+            const glowGeometry = new THREE.SphereGeometry(35, 8, 8)
+            const glowMaterial = new THREE.MeshBasicMaterial({
+              color: 0x00ffdd,
               transparent: true,
-              opacity: 0.3
+              opacity: 0.3 - (i * 0.1)
+            })
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial)
+            glow.position.copy(packet.position)
+            
+            // Add directional indicator (small arrow)
+            const direction = new THREE.Vector3().subVectors(points[1], points[0]).normalize()
+            const arrowGeometry = new THREE.ConeGeometry(8, 20, 6)
+            const arrowMaterial = new THREE.MeshBasicMaterial({
+              color: 0xffff00,
+              transparent: true,
+              opacity: 0.8
+            })
+            const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial)
+            arrow.position.copy(packet.position)
+            arrow.lookAt(points[1])
+            
+            contactLinesRef.current.add(packet)
+            contactLinesRef.current.add(glow)
+            contactLinesRef.current.add(arrow)
+            
+            // Add packet trail with data flow indicators
+            const trailGeometry = new THREE.SphereGeometry(12, 6, 6)
+            const trailMaterial = new THREE.MeshBasicMaterial({
+              color: 0x0099ff,
+              transparent: true,
+              opacity: 0.4
             })
             const trail = new THREE.Mesh(trailGeometry, trailMaterial)
-            const trailProgress = Math.max(0, progress - 0.1)
+            const trailProgress = Math.max(0, progress - 0.15)
             trail.position.lerpVectors(points[0], points[1], trailProgress)
             
-            contactLinesRef.current.add(pulse)
             contactLinesRef.current.add(trail)
           }
         }
@@ -668,39 +669,49 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
             const hopGeometry = new THREE.BufferGeometry().setFromPoints(curvePoints)
             const hopMaterial = new THREE.LineBasicMaterial({
               color: pathColors[hopIndex % pathColors.length],
-              linewidth: 3,
+              linewidth: 4, // Thicker bundle routing lines
               transparent: true,
-              opacity: 0.8
+              opacity: 0.9 // More visible
             })
             
             const hopLine = new THREE.Line(hopGeometry, hopMaterial)
             contactLinesRef.current.add(hopLine)
             
-            // Add animated bundle moving along the path
-            const bundleGeometry = new THREE.SphereGeometry(15, 8, 8)
+            // Add enhanced animated bundle moving along the path
+            const bundleGeometry = new THREE.SphereGeometry(30, 12, 12) // Larger bundles
             const bundleMaterial = new THREE.MeshBasicMaterial({
               color: pathColors[hopIndex % pathColors.length],
               transparent: true,
-              opacity: 0.9
+              opacity: 1.0 // Fully visible bundles
             })
             const movingBundle = new THREE.Mesh(bundleGeometry, bundleMaterial)
             
-            // Animation along the curve
-            const animationTime = (Date.now() / 1000 + pathIndex * 0.5 + hopIndex * 0.2) % 2 // 2 second cycle
-            const progress = animationTime / 2 // 0 to 1
+            // Add bundle glow effect
+            const bundleGlowGeometry = new THREE.SphereGeometry(45, 8, 8)
+            const bundleGlowMaterial = new THREE.MeshBasicMaterial({
+              color: pathColors[hopIndex % pathColors.length],
+              transparent: true,
+              opacity: 0.3
+            })
+            const bundleGlow = new THREE.Mesh(bundleGlowGeometry, bundleGlowMaterial)
+            
+            // Animation along the curve - slower for better visibility
+            const animationTime = (Date.now() / 1500 + pathIndex * 0.7 + hopIndex * 0.3) % 3 // 3 second cycle, slower
+            const progress = animationTime / 3 // 0 to 1
             const currentPos = curve.getPoint(progress)
             movingBundle.position.copy(currentPos)
+            bundleGlow.position.copy(currentPos)
             
-            // Add glow effect trail
-            for (let i = 1; i <= 3; i++) {
-              const trailProgress = Math.max(0, progress - i * 0.1)
+            // Add enhanced glow effect trail with better spacing
+            for (let i = 1; i <= 4; i++) {
+              const trailProgress = Math.max(0, progress - i * 0.08) // Closer spacing
               if (trailProgress > 0) {
                 const trailPos = curve.getPoint(trailProgress)
-                const trailGeometry = new THREE.SphereGeometry(10 - i * 2, 6, 6)
+                const trailGeometry = new THREE.SphereGeometry(25 - i * 4, 6, 6) // Larger trail elements
                 const trailMaterial = new THREE.MeshBasicMaterial({
                   color: pathColors[hopIndex % pathColors.length],
                   transparent: true,
-                  opacity: 0.3 - i * 0.1
+                  opacity: 0.5 - i * 0.1 // Better opacity falloff
                 })
                 const trail = new THREE.Mesh(trailGeometry, trailMaterial)
                 trail.position.copy(trailPos)
@@ -709,6 +720,7 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
             }
             
             contactLinesRef.current.add(movingBundle)
+            contactLinesRef.current.add(bundleGlow)
             
             // Add hop number labels at arc peaks
             const labelCanvas = document.createElement('canvas')

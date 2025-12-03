@@ -185,8 +185,8 @@ class SimulationDataGenerator:
                 sat_pos = sat_data['position']
                 distance = math.sqrt(sat_pos['x']**2 + sat_pos['y']**2 + sat_pos['z']**2)
                 
-                # Simplified visibility check
-                if distance < 2000 and random.random() < 0.3:  # 30% chance of contact
+                # Simplified visibility check - increase contact probability for more packet movement
+                if distance < 2000 and random.random() < 0.5:  # 50% chance of contact
                     contact_duration = random.uniform(180, 600)  # 3-10 minutes
                     data_rate = random.uniform(50e6, 500e6)  # 50-500 Mbps
                     
@@ -212,7 +212,7 @@ class SimulationDataGenerator:
                 sat1_id = sat_ids[i]
                 sat2_id = sat_ids[j]
                 
-                if random.random() < 0.4:  # 40% chance of ISL
+                if random.random() < 0.6:  # 60% chance of ISL for more inter-satellite traffic
                     contact = {
                         'contact_id': f"{sat1_id}_{sat2_id}_isl",
                         'source_id': sat1_id,
@@ -221,8 +221,8 @@ class SimulationDataGenerator:
                         'end_time': current_time + timedelta(minutes=10),
                         'duration_seconds': 900,
                         'data_rate': 100e6,  # 100 Mbps ISL
-                        'isActive': random.random() < 0.7,
-                        'hasData': random.random() < 0.5,
+                        'isActive': random.random() < 0.8, # More active connections
+                        'hasData': random.random() < 0.7,  # More data transfers
                         'distance_km': random.uniform(800, 1200)
                     }
                     contacts.append(contact)
