@@ -10,8 +10,16 @@ import math
 from dataclasses import dataclass
 from typing import Tuple, List, Optional
 from datetime import datetime, timedelta
-from skyfield.api import load, Topos, EarthSatellite
-from skyfield.timelib import Time
+
+# Handle Skyfield import with graceful fallback
+try:
+    from skyfield.api import load, Topos, EarthSatellite
+    from skyfield.timelib import Time
+    SKYFIELD_AVAILABLE = True
+except ImportError:
+    SKYFIELD_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning("Skyfield not available - using simplified orbital mechanics")
 
 # Earth constants
 EARTH_RADIUS = 6371.0  # km
@@ -75,10 +83,19 @@ class OrbitalMechanics:
     """Orbital mechanics calculator using Skyfield for accuracy."""
     
     def __init__(self):
-        # Load time scale and ephemeris data
-        self.ts = load.timescale()
-        self.eph = load('de421.bsp')  # Planetary ephemeris
-        self.earth = self.eph['earth']
+        # Load time scale and ephemeris data if Skyfield is available
+        if SKYFIELD_AVAILABLE:
+            try:
+                self.ts = load.timescale()
+                self.eph = load('de421.bsp')  # Planetary ephemeris
+                self.earth = self.eph['earth']
+                self.skyfield_ready = True
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Skyfield initialization failed: {e}")
+                self.skyfield_ready = False
+        else:
+            self.skyfield_ready = False
     
     def propagate_orbit(
         self, 

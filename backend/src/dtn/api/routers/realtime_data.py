@@ -57,48 +57,89 @@ class SimulationDataGenerator:
         """Generate a realistic satellite constellation."""
         satellites = {}
         
-        # Generate Starlink-like constellation
-        for i in range(20):  # Show 20 satellites for performance
-            sat_id = f"starlink_sat_{i:03d}"
+        # Generate Starlink-like constellation with proper Walker Star distribution
+        num_planes = 8  # Number of orbital planes
+        sats_per_plane = 8  # Satellites per plane
+        total_sats = num_planes * sats_per_plane
+        
+        for plane in range(num_planes):
+            # Orbital plane parameters
+            inclination = 53.0  # Starlink inclination
+            raan = (plane / num_planes) * 360.0  # Right Ascension of Ascending Node
+            altitude = 550 + random.uniform(-20, 20)  # km with some variation
             
-            # Orbital parameters for LEO constellation at 550km
-            altitude = 550 + random.uniform(-10, 10)  # km
-            inclination = 53.0 + random.uniform(-2, 2)  # degrees
-            
-            # Calculate position (simplified orbital mechanics)
-            time_offset = i * 60  # Space satellites in time
-            orbital_period = 2 * math.pi * math.sqrt((6371 + altitude)**3 / 398600.4418)  # seconds
-            
-            # Current position in orbit
-            mean_anomaly = (self.current_sim_time + time_offset) * 2 * math.pi / orbital_period
-            
-            # Convert to Cartesian coordinates (simplified)
-            radius = 6371 + altitude
-            x = radius * math.cos(mean_anomaly) * math.cos(math.radians(inclination))
-            y = radius * math.sin(mean_anomaly) * math.cos(math.radians(inclination))
-            z = radius * math.sin(math.radians(inclination)) * math.sin(mean_anomaly)
-            
-            # Validate coordinates to prevent NaN
-            if not all(math.isfinite(coord) for coord in [x, y, z]):
-                # Fallback to default orbit if calculation fails
-                x, y, z = 7000.0, 0.0, 0.0
-            
-            # Buffer utilization (varies by satellite)
-            buffer_util = random.uniform(0.1, 0.8)
-            bundles_stored = int(buffer_util * 10)  # Max 10 bundles per satellite
-            
-            satellites[sat_id] = {
-                'position': {'x': x, 'y': y, 'z': z},
-                'velocity': {'x': -y * 0.001, 'y': x * 0.001, 'z': 0},  # Orbital velocity
-                'status': 'active',
-                'buffer_utilization': buffer_util,
-                'bundles_stored': bundles_stored,
-                'contacts': random.randint(0, 3),
-                'altitude': altitude,
-                'inclination': inclination,
-                'buffer_drop_strategy': random.choice(['oldest', 'largest', 'random', 'shortest_ttl']),
-                'bundles_dropped': random.randint(0, 5)
-            }
+            for sat_in_plane in range(sats_per_plane):
+                sat_index = plane * sats_per_plane + sat_in_plane
+                if sat_index >= 64:  # Limit total satellites for performance
+                    break
+                    
+                sat_id = f"starlink_sat_{sat_index:03d}"
+                
+                # Phase satellites within each plane
+                mean_anomaly = (sat_in_plane / sats_per_plane) * 360.0
+                # Add orbital progression based on time
+                orbital_period = 2 * math.pi * math.sqrt((6371 + altitude)**3 / 398600.4418)  # seconds
+                time_progression = (self.current_sim_time + plane * 300) * 360.0 / orbital_period  # degrees
+                current_anomaly = (mean_anomaly + time_progression) % 360.0
+                
+                # Convert to radians
+                anomaly_rad = math.radians(current_anomaly)
+                inclination_rad = math.radians(inclination)
+                raan_rad = math.radians(raan)
+                
+                # Calculate position using proper orbital mechanics
+                radius = 6371 + altitude
+                
+                # Position in orbital plane
+                x_orbital = radius * math.cos(anomaly_rad)
+                y_orbital = radius * math.sin(anomaly_rad)
+                z_orbital = 0
+                
+                # Transform to ECI coordinates using rotation matrices
+                cos_raan = math.cos(raan_rad)
+                sin_raan = math.sin(raan_rad)
+                cos_inc = math.cos(inclination_rad)
+                sin_inc = math.sin(inclination_rad)
+                
+                # Apply rotations: first about z-axis (RAAN), then about x-axis (inclination)
+                x = x_orbital * cos_raan - y_orbital * sin_raan * cos_inc
+                y = x_orbital * sin_raan + y_orbital * cos_raan * cos_inc
+                z = y_orbital * sin_inc
+                
+                # Validate coordinates to prevent NaN
+                if not all(math.isfinite(coord) for coord in [x, y, z]):
+                    # Fallback to distributed positions if calculation fails
+                    angle = (sat_index / total_sats) * 2 * math.pi
+                    x = 7000 * math.cos(angle)
+                    y = 7000 * math.sin(angle) * math.cos(inclination_rad)
+                    z = 7000 * math.sin(angle) * math.sin(inclination_rad)
+                
+                # Calculate orbital velocity (perpendicular to radius vector)
+                v_mag = math.sqrt(398600.4418 / radius)  # Circular velocity
+                vel_x = -v_mag * math.sin(anomaly_rad) * cos_raan - v_mag * math.cos(anomaly_rad) * sin_raan * cos_inc
+                vel_y = -v_mag * math.sin(anomaly_rad) * sin_raan + v_mag * math.cos(anomaly_rad) * cos_raan * cos_inc
+                vel_z = v_mag * math.cos(anomaly_rad) * sin_inc
+                
+                # Buffer utilization (varies by satellite)
+                buffer_util = random.uniform(0.1, 0.8)
+                bundles_stored = int(buffer_util * 10)  # Max 10 bundles per satellite
+                
+                satellites[sat_id] = {
+                    'position': {'x': x, 'y': y, 'z': z},
+                    'velocity': {'x': vel_x, 'y': vel_y, 'z': vel_z},
+                    'status': 'active',
+                    'buffer_utilization': buffer_util,
+                    'bundles_stored': bundles_stored,
+                    'contacts': random.randint(0, 3),
+                    'altitude': altitude,
+                    'inclination': inclination,
+                    'raan': raan,
+                    'mean_anomaly': current_anomaly,
+                    'plane_id': plane,
+                    'sat_in_plane': sat_in_plane,
+                    'buffer_drop_strategy': random.choice(['oldest', 'largest', 'random', 'shortest_ttl']),
+                    'bundles_dropped': random.randint(0, 5)
+                }
         
         return satellites
     
@@ -192,30 +233,56 @@ class SimulationDataGenerator:
         """Update simulation state."""
         self.current_sim_time += elapsed_time * self.time_acceleration
         
-        # Update satellite positions
+        # Update satellite positions using proper orbital mechanics
         for sat_id, sat_data in self.satellites.items():
-            # Simple orbital motion
             altitude = sat_data['altitude']
-            orbital_period = 2 * math.pi * math.sqrt((6371 + altitude)**3 / 398600.4418)
-            
-            # Update mean anomaly
-            time_offset = int(sat_id.split('_')[-1]) * 60
-            mean_anomaly = (self.current_sim_time + time_offset) * 2 * math.pi / orbital_period
-            
-            # Update position
-            radius = 6371 + altitude
             inclination = sat_data['inclination']
+            raan = sat_data['raan']
+            plane_id = sat_data['plane_id']
             
-            x = radius * math.cos(mean_anomaly) * math.cos(math.radians(inclination))
-            y = radius * math.sin(mean_anomaly) * math.cos(math.radians(inclination))
-            z = radius * math.sin(math.radians(inclination)) * math.sin(mean_anomaly)
+            # Calculate orbital period
+            radius = 6371 + altitude
+            orbital_period = 2 * math.pi * math.sqrt(radius**3 / 398600.4418)
+            
+            # Update mean anomaly based on orbital motion
+            time_progression = (elapsed_time * self.time_acceleration + plane_id * 300) * 360.0 / orbital_period
+            sat_data['mean_anomaly'] = (sat_data['mean_anomaly'] + time_progression) % 360.0
+            
+            # Convert to radians
+            anomaly_rad = math.radians(sat_data['mean_anomaly'])
+            inclination_rad = math.radians(inclination)
+            raan_rad = math.radians(raan)
+            
+            # Position in orbital plane
+            x_orbital = radius * math.cos(anomaly_rad)
+            y_orbital = radius * math.sin(anomaly_rad)
+            
+            # Transform to ECI coordinates
+            cos_raan = math.cos(raan_rad)
+            sin_raan = math.sin(raan_rad)
+            cos_inc = math.cos(inclination_rad)
+            sin_inc = math.sin(inclination_rad)
+            
+            x = x_orbital * cos_raan - y_orbital * sin_raan * cos_inc
+            y = x_orbital * sin_raan + y_orbital * cos_raan * cos_inc
+            z = y_orbital * sin_inc
             
             # Validate coordinates to prevent NaN
             if not all(math.isfinite(coord) for coord in [x, y, z]):
-                # Fallback to default orbit if calculation fails
-                x, y, z = 7000.0, 0.0, 0.0
+                # Fallback to simple circular motion if calculation fails
+                fallback_angle = (int(sat_id.split('_')[-1]) / 64.0) * 2 * math.pi
+                x = 7000 * math.cos(fallback_angle + self.current_sim_time * 0.001)
+                y = 7000 * math.sin(fallback_angle + self.current_sim_time * 0.001) * math.cos(inclination_rad)
+                z = 7000 * math.sin(fallback_angle + self.current_sim_time * 0.001) * math.sin(inclination_rad)
             
             sat_data['position'] = {'x': x, 'y': y, 'z': z}
+            
+            # Update velocity vector
+            v_mag = math.sqrt(398600.4418 / radius)
+            vel_x = -v_mag * math.sin(anomaly_rad) * cos_raan - v_mag * math.cos(anomaly_rad) * sin_raan * cos_inc
+            vel_y = -v_mag * math.sin(anomaly_rad) * sin_raan + v_mag * math.cos(anomaly_rad) * cos_raan * cos_inc
+            vel_z = v_mag * math.cos(anomaly_rad) * sin_inc
+            sat_data['velocity'] = {'x': vel_x, 'y': vel_y, 'z': vel_z}
             
             # Slowly vary buffer utilization
             sat_data['buffer_utilization'] += random.uniform(-0.05, 0.05)

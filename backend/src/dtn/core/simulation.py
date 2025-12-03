@@ -7,6 +7,7 @@ real-time status updates.
 
 import asyncio
 import uuid
+import math
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass, asdict
@@ -15,6 +16,12 @@ import logging
 
 from .bundle import Bundle, BundleStore
 from ..api.models.base_models import SimulationConfig, SimulationStatus, NetworkMetrics
+try:
+    from ..orbital.mechanics import OrbitalMechanics, create_constellation_elements, KeplerianElements
+    ORBITAL_MECHANICS_AVAILABLE = True
+except ImportError:
+    ORBITAL_MECHANICS_AVAILABLE = False
+    logger.warning("Orbital mechanics module not available - using simplified positioning")
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +75,14 @@ class Simulation:
         self.ground_stations: Dict[str, Any] = {}
         self.bundle_stores: Dict[str, BundleStore] = {}
         self.contact_windows: List[Any] = []
+        
+        # Orbital mechanics (if available)
+        if ORBITAL_MECHANICS_AVAILABLE:
+            self.orbital_mechanics = OrbitalMechanics()
+            self.satellite_elements: Dict[str, Any] = {}
+        else:
+            self.orbital_mechanics = None
+            self.satellite_elements: Dict[str, Any] = {}
         
         # Simulation control
         self._running = False
@@ -207,18 +222,152 @@ class Simulation:
             self.state = SimulationState.ERROR
     
     async def _initialize_constellation(self):
-        """Initialize satellite constellation (placeholder)."""
-        # This will be implemented when we have orbital mechanics
-        self.stats.total_satellites = 10  # Placeholder
-        for i in range(self.stats.total_satellites):
-            sat_id = f"sat_{i:03d}"
-            self.satellites[sat_id] = {
-                "id": sat_id,
-                "name": f"Satellite {i}",
-                "position": {"x": 0, "y": 0, "z": 0},
-                "velocity": {"x": 0, "y": 0, "z": 0}
-            }
-            self.bundle_stores[sat_id] = BundleStore(max_size=10*1024*1024)  # 10MB
+        """Initialize satellite constellation with proper orbital mechanics."""
+        try:
+            constellation_id = self.config.constellation_id
+            
+            if ORBITAL_MECHANICS_AVAILABLE:
+                # Create orbital elements for the constellation
+                if constellation_id == "starlink":
+                    # Starlink constellation parameters
+                    num_satellites = 60  # Reduced for performance, represents one shell
+                    altitude = 550.0  # km
+                    inclination = 53.0  # degrees
+                    elements_list = create_constellation_elements(
+                        "walker_star", num_satellites, altitude, inclination
+                    )
+                elif constellation_id == "kuiper":
+                    # Project Kuiper constellation
+                    num_satellites = 48
+                    altitude = 630.0  # km
+                    inclination = 51.9  # degrees
+                    elements_list = create_constellation_elements(
+                        "walker_star", num_satellites, altitude, inclination
+                    )
+                elif constellation_id == "gps":
+                    # GPS constellation
+                    num_satellites = 31
+                    altitude = 20200.0  # km
+                    inclination = 55.0  # degrees
+                    elements_list = create_constellation_elements(
+                        "walker_star", num_satellites, altitude, inclination
+                    )
+                else:
+                    # Default LEO constellation
+                    num_satellites = 20
+                    altitude = 400.0  # km
+                    inclination = 51.6  # degrees
+                    elements_list = create_constellation_elements(
+                        "single_plane", num_satellites, altitude, inclination
+                    )
+                
+                self.stats.total_satellites = len(elements_list)
+                
+                # Initialize satellites with orbital elements
+                for i, elements in enumerate(elements_list):
+                    sat_id = f"{constellation_id}_sat_{i:03d}"
+                    
+                    # Calculate initial position
+                    initial_state = self.orbital_mechanics.propagate_orbit(elements, datetime.now())
+                    
+                    self.satellites[sat_id] = {
+                        "id": sat_id,
+                        "name": f"{constellation_id.title()} {i+1}",
+                        "position": {
+                            "x": initial_state.position.x,
+                            "y": initial_state.position.y,
+                            "z": initial_state.position.z
+                        },
+                        "velocity": {
+                            "x": initial_state.velocity.x,
+                            "y": initial_state.velocity.y,
+                            "z": initial_state.velocity.z
+                        },
+                        "geodetic": {
+                            "latitude": initial_state.geodetic.latitude,
+                            "longitude": initial_state.geodetic.longitude,
+                            "altitude": initial_state.geodetic.altitude
+                        },
+                        "status": "active",
+                        "contacts": 0,
+                        "bundles_stored": 0,
+                        "buffer_utilization": 0.0,
+                        "buffer_drop_strategy": self.config.buffer_drop_strategy,
+                        "bundles_dropped": 0,
+                        "in_eclipse": initial_state.in_eclipse
+                    }
+                    
+                    # Store orbital elements for propagation
+                    self.satellite_elements[sat_id] = elements
+                    
+                    # Create bundle store with configured buffer size
+                    buffer_size_bytes = self.config.satellite_buffer_size_kb * 1024
+                    self.bundle_stores[sat_id] = BundleStore(max_size=buffer_size_bytes)
+                    
+                logger.info(f"Initialized constellation {constellation_id} with {len(elements_list)} satellites")
+            else:
+                # Fallback constellation initialization without orbital mechanics
+                raise Exception("Using fallback constellation initialization")
+            
+        except Exception as e:
+            logger.warning(f"Using fallback constellation initialization: {e}")
+            # Fallback to distributed positioning
+            constellation_id = self.config.constellation_id
+            num_satellites = 20 if constellation_id == "starlink" else 10
+            self.stats.total_satellites = num_satellites
+            
+            # Create distributed satellite positions using proper orbital distribution
+            num_planes = 4
+            sats_per_plane = num_satellites // num_planes
+            
+            for plane in range(num_planes):
+                inclination = 53.0  # Starlink-like
+                raan = (plane / num_planes) * 360.0
+                
+                for sat_in_plane in range(sats_per_plane):
+                    sat_index = plane * sats_per_plane + sat_in_plane
+                    if sat_index >= num_satellites:
+                        break
+                        
+                    sat_id = f"{constellation_id}_sat_{sat_index:03d}"
+                    
+                    # Distribute satellites properly in orbital planes
+                    mean_anomaly = (sat_in_plane / sats_per_plane) * 360.0
+                    angle_rad = math.radians(mean_anomaly)
+                    inclination_rad = math.radians(inclination)
+                    raan_rad = math.radians(raan)
+                    
+                    radius = 7000  # km
+                    
+                    # Position in orbital plane
+                    x_orbital = radius * math.cos(angle_rad)
+                    y_orbital = radius * math.sin(angle_rad)
+                    
+                    # Transform to ECI coordinates
+                    cos_raan = math.cos(raan_rad)
+                    sin_raan = math.sin(raan_rad)
+                    cos_inc = math.cos(inclination_rad)
+                    sin_inc = math.sin(inclination_rad)
+                    
+                    x = x_orbital * cos_raan - y_orbital * sin_raan * cos_inc
+                    y = x_orbital * sin_raan + y_orbital * cos_raan * cos_inc
+                    z = y_orbital * sin_inc
+                    
+                    self.satellites[sat_id] = {
+                        "id": sat_id,
+                        "name": f"{constellation_id.title()} {sat_index+1}",
+                        "position": {"x": x, "y": y, "z": z},
+                        "velocity": {"x": -5.0, "y": 5.0, "z": 0},
+                        "status": "active",
+                        "contacts": 0,
+                        "bundles_stored": 0,
+                        "buffer_utilization": 0.0,
+                        "buffer_drop_strategy": self.config.buffer_drop_strategy or "oldest",
+                        "bundles_dropped": 0
+                    }
+                    
+                    buffer_size_bytes = (self.config.satellite_buffer_size_kb or 100) * 1024
+                    self.bundle_stores[sat_id] = BundleStore(max_size=buffer_size_bytes)
     
     async def _initialize_ground_stations(self):
         """Initialize ground stations."""
@@ -245,9 +394,55 @@ class Simulation:
         pass
     
     async def _update_satellite_positions(self, sim_time: float):
-        """Update satellite positions (placeholder)."""
-        # This will use orbital mechanics when implemented
-        pass
+        """Update satellite positions using orbital mechanics."""
+        try:
+            if ORBITAL_MECHANICS_AVAILABLE and self.orbital_mechanics:
+                current_time = datetime.now() + timedelta(seconds=sim_time)
+                
+                for sat_id, elements in self.satellite_elements.items():
+                    if sat_id in self.satellites:
+                        # Propagate orbit to current simulation time
+                        state = self.orbital_mechanics.propagate_orbit(elements, current_time)
+                        
+                        # Update satellite position and velocity
+                        self.satellites[sat_id]["position"] = {
+                            "x": state.position.x,
+                            "y": state.position.y,
+                            "z": state.position.z
+                        }
+                        self.satellites[sat_id]["velocity"] = {
+                            "x": state.velocity.x,
+                            "y": state.velocity.y,
+                            "z": state.velocity.z
+                        }
+                        self.satellites[sat_id]["geodetic"] = {
+                            "latitude": state.geodetic.latitude,
+                            "longitude": state.geodetic.longitude,
+                            "altitude": state.geodetic.altitude
+                        }
+                        self.satellites[sat_id]["in_eclipse"] = state.in_eclipse
+            else:
+                # Fallback: simple but distributed orbital motion
+                for sat_index, (sat_id, sat_data) in enumerate(self.satellites.items()):
+                    if "position" in sat_data:
+                        # Use orbital motion that maintains distribution
+                        angle_increment = 0.0005 * (1 + sat_index * 0.1)  # Slightly different speeds
+                        current_radius = math.sqrt(sat_data["position"]["x"]**2 + sat_data["position"]["y"]**2 + sat_data["position"]["z"]**2)
+                        
+                        # Preserve the orbital plane by rotating around the same inclination
+                        current_angle = math.atan2(sat_data["position"]["z"], sat_data["position"]["x"])
+                        new_angle = current_angle + angle_increment
+                        
+                        # Keep same Y component for inclination
+                        y_ratio = sat_data["position"]["y"] / current_radius if current_radius > 0 else 0
+                        new_radius = math.sqrt(current_radius**2 - sat_data["position"]["y"]**2) if current_radius > abs(sat_data["position"]["y"]) else current_radius
+                        
+                        sat_data["position"]["x"] = new_radius * math.cos(new_angle)
+                        sat_data["position"]["z"] = new_radius * math.sin(new_angle)
+                        # Keep Y component to maintain orbital plane
+                        
+        except Exception as e:
+            logger.warning(f"Error updating satellite positions: {e}")
     
     async def _update_contacts(self, sim_time: float):
         """Update contact windows (placeholder)."""

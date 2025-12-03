@@ -221,38 +221,83 @@ const SimulationView = () => {
       const contacts = []
       const satelliteCount = constellations[selectedConstellation]?.satellites || 56
       
-      for (let i = 0; i < Math.min(satelliteCount, 20); i++) {
-        const satId = `starlink_sat_${i.toString().padStart(3, '0')}`
-        const angle = (i / satelliteCount) * Math.PI * 2 + (Date.now() / 10000)
-        const radius = 7000 + Math.sin(angle * 3) * 500
-        const height = Math.cos(angle * 2) * 1000
+      // Create properly distributed constellation with multiple orbital planes
+      const planesCount = 8  // Multiple orbital planes
+      const satsPerPlane = Math.ceil(Math.min(satelliteCount, 60) / planesCount)
+      let satIndex = 0
+      
+      for (let plane = 0; plane < planesCount && satIndex < Math.min(satelliteCount, 60); plane++) {
+        const planeInclination = 53.0 // Starlink-like inclination
+        const planeRaan = (plane / planesCount) * 360 // Right Ascension spread
         
-        satellites[satId] = {
-          position: {
-            x: Math.cos(angle) * radius,
-            y: height,
-            z: Math.sin(angle) * radius
-          },
-          status: 'active',
-          contacts: Math.floor(Math.random() * 5),
-          bundles_stored: Math.floor(Math.random() * 3) // Add bundle storage for footprints
+        for (let sat = 0; sat < satsPerPlane && satIndex < Math.min(satelliteCount, 60); sat++) {
+          const satId = `starlink_sat_${satIndex.toString().padStart(3, '0')}`
+          
+          // Spread satellites within each orbital plane
+          const meanAnomaly = (sat / satsPerPlane) * 360
+          const timeOffset = (Date.now() / 8000) // Slow orbital motion
+          const currentAnomaly = (meanAnomaly + timeOffset + plane * 45) % 360 // Phase different planes
+          const angle = (currentAnomaly * Math.PI) / 180
+          
+          // Orbital parameters for realistic positioning
+          const altitude = 550 + Math.sin(plane * 0.8) * 100 // Vary altitude slightly per plane
+          const radius = 6371 + altitude // Earth radius + altitude
+          
+          // Calculate position with proper orbital mechanics approximation
+          const cosInclination = Math.cos((planeInclination * Math.PI) / 180)
+          const sinInclination = Math.sin((planeInclination * Math.PI) / 180)
+          const cosRaan = Math.cos((planeRaan * Math.PI) / 180)
+          const sinRaan = Math.sin((planeRaan * Math.PI) / 180)
+          
+          // Position in orbital plane
+          const xOrbital = radius * Math.cos(angle)
+          const yOrbital = radius * Math.sin(angle)
+          const zOrbital = 0
+          
+          // Transform to ECI coordinates (simplified)
+          const x = xOrbital * cosRaan - yOrbital * sinRaan * cosInclination
+          const y = xOrbital * sinRaan + yOrbital * cosRaan * cosInclination
+          const z = yOrbital * sinInclination
+          
+          satellites[satId] = {
+            position: { x, y, z },
+            status: 'active',
+            contacts: Math.floor(Math.random() * 5),
+            bundles_stored: Math.floor(Math.random() * 3),
+            buffer_utilization: Math.random() * 0.8,
+            buffer_drop_strategy: bufferDropStrategy || 'oldest',
+            bundles_dropped: Math.floor(Math.random() * 2)
+          }
+          
+          satIndex++
         }
+      }
+      
+      // Add contact lines based on proximity between satellites
+      const satelliteIds = Object.keys(satellites)
+      for (let i = 0; i < satelliteIds.length; i++) {
+        const satId1 = satelliteIds[i]
+        const sat1 = satellites[satId1]
         
-        // Add contact lines based on proximity
-        if (i > 0) {
-          const prevSatId = `starlink_sat_${(i-1).toString().padStart(3, '0')}`
+        // Check contacts with nearby satellites (limit to avoid too many lines)
+        for (let j = i + 1; j < Math.min(i + 3, satelliteIds.length); j++) {
+          const satId2 = satelliteIds[j]
+          const sat2 = satellites[satId2]
+          
           const distance = Math.sqrt(
-            Math.pow(satellites[satId].position.x - satellites[prevSatId].position.x, 2) +
-            Math.pow(satellites[satId].position.y - satellites[prevSatId].position.y, 2) +
-            Math.pow(satellites[satId].position.z - satellites[prevSatId].position.z, 2)
+            Math.pow(sat1.position.x - sat2.position.x, 2) +
+            Math.pow(sat1.position.y - sat2.position.y, 2) +
+            Math.pow(sat1.position.z - sat2.position.z, 2)
           )
           
-          if (distance < 2000) { // Within communication range
+          if (distance < 2500) { // Within ISL communication range
             contacts.push({
-              source: satellites[satId].position,
-              target: satellites[prevSatId].position,
+              source: sat1.position,
+              target: sat2.position,
               isActive: true,
-              hasData: Math.random() > 0.5
+              hasData: Math.random() > 0.7,
+              source_id: satId1,
+              target_id: satId2
             })
           }
         }
