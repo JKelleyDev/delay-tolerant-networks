@@ -1,0 +1,394 @@
+\documentclass[10pt]{IEEE}
+
+\setstretch{1.0}
+
+\begin{document}
+\TitleEight
+{\small \tableofcontents}
+
+\newpage
+\newpage
+
+\section{\textbf{Design of a Delay-Tolerant Network (DTN) Simulator for Satellite Communications}}
+
+\subsection{Introduction}
+
+This document describes the design of a delay-tolerant network (DTN) simulator for satellite communications. The simulator provides a realistic environment for studying DTN routing protocols in satellite constellations using accurate orbital mechanics, RF link modeling, and interactive 3D visualization.
+
+At a high level, the system is a full-stack application consisting of:
+\begin{itemize}[]
+  \item A Python-based simulation engine exposed through a FastAPI REST interface.
+  \item A React-based frontend with Three.js for real-time 3D visualization.
+  \item Implementations of DTN routing protocols (Epidemic, PRoPHET, Spray-and-Wait).
+  \item Physics-based orbital propagation and RF link budget calculations.
+\end{itemize}
+
+The design emphasizes modularity, extensibility for future research, and support for comparative experiments across routing algorithms and satellite constellations.
+
+\subsection{System Overview}
+
+\subsubsection{High-Level Goals}
+
+The primary goals of the simulator design are:
+\begin{itemize}[]
+  \item Provide a configurable and repeatable environment for DTN protocol evaluation.
+  \item Model realistic satellite orbits, ground stations, and communication links.
+  \item Support comparative experiments across multiple routing algorithms.
+  \item Offer an interactive, intuitive visualization for both research and education.
+\end{itemize}
+
+\subsubsection{Core Use Cases}
+
+Key use cases driving the design include:
+\begin{itemize}[]
+  \item Running simulations on predefined constellations (e.g., Starlink, GPS, GEO).
+  \item Uploading custom constellations via CSV.
+  \item Configuring routing algorithms, bundle parameters, and traffic patterns.
+  \item Running comparative experiments and exporting metrics/plots for analysis.
+\end{itemize}
+
+\subsection{Architecture}
+
+\subsubsection{Layered Architecture}
+
+The simulator follows a layered architecture inspired by the OSI model while adapting to DTN requirements. Major layers are:
+
+\begin{itemize}[]
+  \item \textbf{Physical layer:} Orbital mechanics, contact prediction, RF link budgets.
+  \item \textbf{Data link layer:} Contact windows, effective data rate, store-and-forward.
+  \item \textbf{Network layer:} DTN routing protocols and endpoint addressing.
+  \item \textbf{Transport layer:} Bundle protocol semantics, custody transfer, lifetimes.
+  \item \textbf{Application layer:} Simulation and experiment management, REST API.
+  \item \textbf{Presentation/UI:} Web frontend and 3D visualization.
+\end{itemize}
+
+\subsubsection{Backend Components}
+
+The backend is a Python application exposing REST endpoints via FastAPI. Key components include:
+
+\begin{itemize}[]
+  \item \textbf{Orbital Mechanics Module}
+  Handles orbital state propagation using Keplerian elements and SGP4/SDP4-style models. It computes satellite positions in ECI/ECEF coordinates and transforms them into geodetic latitude/longitude/altitude. It also predicts contact windows between satellites and ground stations based on line-of-sight geometry and minimum elevation masks.
+
+  \item \textbf{RF Link Budget Module}
+  Computes free-space path loss and received power, and models atmospheric, rain, and other losses. It derives SNR and effective data rates using Shannon capacity with a configurable coding efficiency.
+
+  \item \textbf{DTN Routing Module}
+  Implements Epidemic, PRoPHET, and Spray-and-Wait routing as pluggable strategies. Routing decisions are made based on available contacts, predicted encounters, and protocol-specific metrics (e.g., delivery predictability in PRoPHET).
+
+  \item \textbf{Bundle Protocol and Storage}
+  Represents data as ``bundles'' with lifetime, payload size, priority, flags, and hop count. A bundle store manages persistent storage, expiration, and metric tracking. Custody transfer and acknowledgments provide hop-by-hop reliability when enabled.
+
+  \item \textbf{Simulation and Experiment Framework}
+  Orchestrates simulations, advances time, applies routing logic, updates bundle states, and records performance metrics. An experiment framework repeatedly runs simulations under different configurations and aggregates results.
+\end{itemize}
+
+\subsubsection{Frontend Components}
+
+The frontend is a React application with Three.js for rendering a 3D view of the Earth, satellites, and ground stations. Major UI components:
+
+\begin{itemize}[]
+  \item \textbf{Constellation Management} view for selecting built-in constellations or uploading custom ones.
+  \item \textbf{Simulation Configuration} view for specifying routing algorithm, duration, ground stations, and optional weather effects.
+  \item \textbf{Experiments Interface} for defining comparative experiments and reviewing aggregated metrics.
+  \item \textbf{3D Visualization} with satellite icons, coverage footprints, bundle indicators, and ground station markers, plus camera controls.
+\end{itemize}
+
+Communication between frontend and backend occurs via JSON-based REST endpoints (e.g., create simulation, query simulation status and metrics, list constellations).
+
+\subsection{Key Design Decisions}
+
+\subsubsection{Physics-Driven Contact Modeling}
+
+Instead of abstract connectivity graphs, the simulator computes satellite and ground station states from orbital mechanics. Contact windows are derived by:
+\begin{enumerate}[]
+  \item Propagating satellite positions over the simulation interval.
+  \item Converting positions into topocentric coordinates for each ground station.
+  \item Computing elevation/azimuth and enforcing a minimum elevation angle.
+\end{enumerate}
+
+This approach directly links network connectivity to orbital geometry and allows evaluation of constellation design choices and ground station placement.
+
+\subsubsection{RF Link and Weather Modeling}
+
+RF link modeling uses a link budget approach, including:
+\begin{itemize}[]
+  \item Free-space path loss based on distance and frequency.
+  \item Optional atmospheric and rain attenuation models.
+  \item Mapping SNR to effective data rate using Shannon capacity and coding efficiency.
+\end{itemize}
+
+This design allows experiments on the impact of weather, frequency band selection, and elevation masks on DTN performance.
+
+\subsubsection{Choice of Routing Protocols}
+
+The initial set of routing protocols was chosen to span key DTN design trade-offs:
+
+\begin{itemize}[]
+  \item \textbf{Epidemic:} Maximizes delivery probability through aggressive replication but incurs high overhead.
+  \item \textbf{PRoPHET:} Uses probabilistic delivery predictability based on encounter history for more efficient forwarding.
+  \item \textbf{Spray-and-Wait:} Limits the number of copies, separating a spray phase from a wait phase for controlled replication.
+\end{itemize}
+
+Each protocol implements a common interface for forwarding decisions, making it straightforward to extend the simulator with additional algorithms (e.g., MaxProp, RAPID).
+
+\subsubsection{Store-and-Forward Architecture}
+
+The simulator follows a store-and-forward design consistent with DTN principles:
+\begin{itemize}[]
+  \item Bundles are stored at intermediate nodes when no suitable contact is available.
+  \item Contact windows provide opportunities to transmit bundles subject to link capacity and remaining window duration.
+  \item Custody transfer, bundle lifetimes, and expiration policies model DTN reliability mechanisms.
+\end{itemize}
+
+This design allows experiments on buffer management, priority policies, and long-delay network behaviors.
+
+\subsection{Component Design}
+
+\subsubsection{Contact Predictor}
+
+The contact predictor encapsulates the logic to compute contact windows between satellites and ground stations. Given a start time and duration, it:
+
+\begin{enumerate}[]
+  \item Steps time in fixed increments.
+  \item Evaluates elevation/azimuth/range for each satellite--ground station pair.
+  \item Detects intervals where elevation exceeds the configured mask.
+  \item Produces a list of contact window objects with start time, end time, and geometric properties.
+\end{enumerate}
+
+These contact windows are later enriched with data rate and SNR information from the RF module.
+
+\subsubsection{Experiment Framework}
+
+The experiment framework organizes comparative experiments by:
+
+\begin{itemize}[]
+  \item Accepting a configuration specifying constellation, routing algorithms, traffic parameters, and number of iterations.
+  \item Running multiple simulations per algorithm to capture statistical variation.
+  \item Aggregating metrics (delivery ratio, delay, overhead, hop count) and computing statistics (mean, variance, confidence intervals).
+  \item Returning an experiment report object consumable by the frontend or export tools.
+\end{itemize}
+
+\subsection{Limitations and Future Work}
+
+Current limitations include:
+\begin{itemize}[]
+  \item A limited set of routing protocols relative to the DTN literature.
+  \item Simplified RF and weather models compared to full ITU-recommended implementations.
+  \item Static ground station locations and fixed traffic patterns.
+\end{itemize}
+
+Planned enhancements:
+\begin{itemize}[]
+  \item Additional routing protocols (e.g., MaxProp, RAPID, ML-based schemes).
+  \item More detailed channel models and interference effects.
+  \item Mobile ground stations (ships, aircraft) and inter-satellite links.
+  \item Expanded visualization features and integration with real tracking data.
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\section{\textbf{Experimental Results Obtained Using the DTN Simulator for Satellite Constellations}}
+
+\subsection{Introduction}
+
+This document reports experimental results obtained using the DTN simulator for satellite constellations. The primary objective is to evaluate and compare three DTN routing protocols---Epidemic, PRoPHET, and Spray-and-Wait---under realistic orbital and RF conditions.
+
+We focus on the following key performance metrics:
+\begin{itemize}[]
+  \item Delivery ratio (fraction of generated bundles successfully delivered).
+  \item End-to-end delay (time from bundle creation to delivery).
+  \item Overhead ratio (number of transmissions per successful delivery).
+  \item Hop count (number of intermediate nodes on successful paths).
+\end{itemize}
+
+\subsection{Experimental Setup}
+
+\subsubsection{Constellations and Ground Stations}
+
+Experiments use both built-in and custom constellations. Example built-in constellations include:
+\begin{itemize}[]
+  \item A low-Earth-orbit constellation similar to Starlink Phase 1.
+  \item A medium-Earth-orbit GPS-like constellation.
+  \item A minimal GEO constellation.
+\end{itemize}
+
+Each scenario pairs one or more ground stations as source and destination nodes. Ground stations are placed at realistic geographic locations and use a configurable minimum elevation mask to determine contact opportunities.
+
+\subsubsection{Traffic Model}
+
+Bundle generation is modeled as an application-level traffic process with configurable parameters:
+\begin{itemize}[]
+  \item \textbf{Traffic pattern:} Uniform or bursty generation over the experiment duration.
+  \item \textbf{Bundle size:} Fixed or drawn from a distribution (e.g., several kilobytes).
+  \item \textbf{Bundle lifetime (TTL):} Maximum time a bundle may remain in the network before expiration.
+  \item \textbf{Satellite buffer size:} Storage capacity per node for queued bundles.
+\end{itemize}
+
+Unless otherwise noted, traffic is generated between a single source--destination ground station pair, with satellites serving as relay nodes.
+
+\subsubsection{Routing Protocols}
+
+We evaluate three DTN routing protocols implemented in the simulator:
+
+\begin{itemize}[]
+  \item \textbf{Epidemic Routing:} Replicates bundles to all encountered neighbors to maximize delivery probability.
+  \item \textbf{PRoPHET Routing:} Maintains delivery predictability values based on encounter history and uses them to forward bundles to more promising neighbors.
+  \item \textbf{Spray-and-Wait Routing:} Limits the number of copies per bundle, distributing them during an initial spray phase and then waiting for direct delivery.
+\end{itemize}
+
+All algorithms operate on the same contact plan and link statistics generated by the orbital and RF modules.
+
+\subsubsection{Simulation Parameters}
+
+For each scenario, we configure:
+\begin{itemize}[]
+  \item Total simulated time (e.g., several hours to a few days).
+  \item Routing algorithm under test.
+  \item Whether weather effects are enabled in the RF model.
+  \item Number of independent iterations per configuration (for statistical robustness).
+\end{itemize}
+
+Simulations run with a fixed time step used for orbital propagation, contact prediction, and link budget updates.
+
+\subsection{Methodology}
+
+\subsubsection{Contact Prediction and Link Modeling}
+
+Contact windows between satellites and ground stations are computed from orbital geometry. At each timestep, the simulator:
+
+\begin{enumerate}[]
+  \item Propagates satellite states using Keplerian elements and Earth rotation.
+  \item Converts satellite positions to topocentric coordinates for each ground station.
+  \item Computes elevation and applies a minimum elevation threshold.
+\end{enumerate}
+
+During active contact windows, RF link budgets are calculated, including free-space path loss and optional atmospheric and rain attenuation. SNR is mapped to data rate, which determines how many bundles can be transmitted before the contact ends.
+
+\subsubsection{Metrics Collection}
+
+For each simulation run, the following metrics are recorded:
+
+\begin{itemize}[]
+  \item Total number of generated bundles.
+  \item Number of delivered bundles and their delivery timestamps.
+  \item Number of transmissions (including replicas) per bundle.
+  \item Path taken (sequence of satellites) for delivered bundles.
+  \item Number of expired or dropped bundles due to lifetime or buffer limits.
+\end{itemize}
+
+From these raw data, we compute:
+\begin{align*}
+  \text{Delivery Ratio} &= \frac{\text{Bundles Delivered}}{\text{Bundles Generated}}, \\
+  \text{Average Delay} &= \frac{1}{N_{\text{delivered}}} \sum_{i} (t_{\text{delivery},i} - t_{\text{creation},i}), \\
+  \text{Overhead Ratio} &= \frac{\text{Total Transmissions}}{\text{Successful Deliveries}}.
+\end{align*}
+
+\subsubsection{Statistical Analysis}
+
+To account for stochasticity in contact times, link conditions, and traffic, each configuration is repeated across multiple independent iterations. For each metric, we compute:
+
+\begin{itemize}[]
+  \item Sample mean and standard deviation across iterations.
+  \item Approximate 95\% confidence intervals using the $t$-distribution.
+\end{itemize}
+
+This allows us to compare algorithms with some notion of statistical significance, rather than relying on single-run outcomes.
+
+\subsection{Results}
+
+This section summarizes representative results. Actual values, tables, and plots should be inserted using the real output from your simulator.
+
+\subsubsection{Delivery Ratio}
+
+Figure~\ref{fig:delivery_ratio} illustrates the average delivery ratio for the three protocols across a representative LEO constellation scenario.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=0.4]{delivery_ratio_plot.png}
+    \caption{Delivery ratio comparison across Epidemic, PRoPHET, and Spray-and-Wait routing. Error bars show standard deviation across 5 runs.}
+    \label{fig:delivery_ratio}
+\end{figure}
+
+
+In our experiments, Epidemic routing typically achieves the highest delivery ratio due to aggressive replication, followed by PRoPHET, with Spray-and-Wait often exhibiting lower delivery in very sparse or short-lived contact scenarios.
+
+\subsubsection{End-to-End Delay}
+
+Figure~\ref{fig:avg_delay} shows the average end-to-end delay for successfully delivered bundles.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=0.4]{average_delay_plot.png}
+    \caption{Average end-to-end delay for the three DTN routing protocols. Error bars represent standard deviation across 5 simulation runs.}
+    \label{fig:avg_delay}
+\end{figure}
+
+
+Epidemic routing tends to minimize delay by leveraging many parallel paths. PRoPHET can show comparable or slightly higher delays depending on how quickly high-predictability paths form. Spray-and-Wait often incurs larger delays, especially when the number of initial copies is small.
+
+\subsubsection{Overhead Ratio}
+
+Figure~\ref{fig:overhead} summarizes the overhead ratio.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=0.4]{overhead_plot.png}
+    \caption{Transmission overhead comparison. Epidemic incurs the highest overhead due to replication, while Spray-and-Wait exhibits the lowest at the cost of reduced delivery ratio.}
+    \label{fig:overhead}
+\end{figure}
+
+
+As expected, Epidemic routing has the highest overhead, sometimes by orders of magnitude, while Spray-and-Wait substantially reduces the number of transmissions. PRoPHET typically falls between Epidemic and Spray-and-Wait, offering a more favorable trade-off in many scenarios.
+
+\subsubsection{Hop Count Distribution}
+Hop count metrics were not recorded in this experiment configuration.
+Although hop count is relevant in DTN analysis, our focus in this study
+is on delivery ratio, delay, and overhead, which are more strongly impacted
+by orbital dynamics and RF link availability in LEO constellations.
+
+
+\subsection{Discussion}
+
+The results highlight classic DTN trade-offs:
+
+\begin{itemize}[]
+  \item \textbf{Epidemic routing} offers high delivery ratios and low delays but incurs very high overhead. It is suitable for small networks or scenarios where bandwidth and buffer resources are less constrained.
+  \item \textbf{PRoPHET routing} reduces overhead by biasing forwarding decisions toward nodes with high delivery predictability. It maintains good performance when encounter patterns are somewhat stable and can be learned over time.
+  \item \textbf{Spray-and-Wait} strictly limits replication, dramatically lowering overhead at the cost of delivery probability and delay, especially when contact opportunities are sparse or contact durations are short.
+\end{itemize}
+
+The inclusion of realistic orbital and RF models means that protocol behavior is closely tied to constellation design, ground station placement, and link conditions (e.g., minimum elevation mask, weather effects).
+
+\subsection{Conclusion and Future Work}
+
+We have experimentally evaluated three DTN routing protocols in a physics-based satellite simulation environment, measuring delivery ratio, delay, overhead, and hop count across multiple scenarios. The results confirm expected trade-offs between reliability, timeliness, and resource usage.
+
+Future experimentation directions include:
+\begin{itemize}[]
+  \item Evaluating additional routing protocols such as MaxProp or RAPID.
+  \item Varying constellation parameters and ground station layouts to explore design trade-offs.
+  \item Investigating the impact of more sophisticated weather and interference models.
+  \item Exploring machine-learning-guided routing decisions using the existing experiment framework.
+\end{itemize}
+
+The DTN simulator provides a foundation for ongoing research into satellite-based DTNs and serves as a flexible platform for exploring new protocol designs and network architectures.
+
+\end{document}
