@@ -1885,7 +1885,7 @@ class ExperimentFramework:
         return ExperimentReport(results)
 \end{lstlisting}
 
-\subsection{DTN-Specific Application Features}
+\subsubsection{DTN-Specific Application Features}
 
 \subsubsection{Delay-Tolerant Management}
 Applications designed for asynchronous operations:
@@ -1914,44 +1914,44 @@ Specialized applications for DTN analysis:
 RF link quality directly affects routing decisions:
 
 \begin{lstlisting}[language=Python]
-def calculate\_forwarding\_priority(self, bundle, contact):
+def calculate_forwarding_priority(self, bundle, contact):
     """Priority based on link quality and routing algorithm"""
-    base\_priority = contact.data\_rate / 100.0
+    base_priority = contact.data_rate / 100.0
 
     # Boost for direct delivery
-    if contact.target\_id == bundle.destination.ssp:
-        base\_priority += 10.0
+    if contact.target_id == bundle.destination.ssp:
+        base_priority += 10.0
 
     # Reduce for poor link quality
-    if contact.snr\_db < 15.0:
-        base\_priority *= 0.5
+    if contact.snr_db < 15.0:
+        base_priority *= 0.5
 
-    return base\_priority
+    return base_priority
 \end{lstlisting}
 
 \subsubsection{Data Link Transport Layer}
 Contact duration limits affect bundle transmission:
 
 \begin{lstlisting}[language=Python]
-def can\_transmit\_bundle(self, bundle, contact\_window):
+def can_transmit_bundle(self, bundle, contact_window):
     """Check if bundle can be transmitted in available time"""
-    transmission\_time = bundle.payload\_size / contact\_window.data\_rate
-    remaining\_time = contact\_window.remaining\_duration()
+    transmission_time = bundle.payload_size / contact_window.data_rate
+    remaining_time = contact_window.remaining_duration()
 
-    return transmission\_time <= remaining\_time
+    return transmission_time <= remaining_time
 \end{lstlisting}
 
 \subsubsection{Network Session Layer}
 Routing algorithms use contact prediction:
 
 \begin{lstlisting}[language=Python]
-def update\_routing\_info(self, contact\_plan):
+def update_routing_info(self, contact_plan):
     """Update routing state with predicted contacts"""
-    for contact in contact\_plan:
-        if self.is\_neighbor\_contact(contact):
+    for contact in contact_plan:
+        if self.is_neighbor_contact(contact):
             # Update delivery predictability for PRoPHET
-            self.\_update\_encounter\_predictability(
-                contact.target\_id, contact.start\_time
+            self._update_encounter_predictability(
+                contact.target_id, contact.start_time
             )
 \end{lstlisting}
 
