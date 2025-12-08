@@ -11,6 +11,8 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
   const satelliteGroupRef = useRef(null)
   const contactLinesRef = useRef(null)
   const bundleGroupRef = useRef(null)
+  const groundStationGroupRef = useRef(null)
+  const earthRef = useRef(null)
   const [selectedSatellite, setSelectedSatellite] = useState(null)
 
   useEffect(() => {
@@ -90,6 +92,7 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
     const earth = new THREE.Mesh(earthGeometry, earthMaterial)
     earth.rotation.x = -Math.PI * 0.02 // Earth's axial tilt
     scene.add(earth)
+    earthRef.current = earth
 
     // Simple atmospheric glow
     const atmosphereGeometry = new THREE.SphereGeometry(6500, 64, 64)
@@ -167,78 +170,10 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
     bundleGroupRef.current = bundleGroup
     scene.add(bundleGroup)
 
-    // Ground stations group - will rotate with Earth
+    // Ground stations group - will rotate with Earth (populated dynamically)
     const groundStationGroup = new THREE.Group()
-    earth.add(groundStationGroup) // Add to Earth so it rotates with it
-    
-    // Add major ground stations
-    const groundStations = [
-      { name: 'Los Angeles', lat: 34.0522, lon: -118.2437, color: 0x00ff00 },
-      { name: 'Tokyo', lat: 35.6762, lon: 139.6503, color: 0x00ff00 },
-      { name: 'London', lat: 51.5074, lon: -0.1278, color: 0xffaa00 },
-      { name: 'Sydney', lat: -33.8688, lon: 151.2093, color: 0xffaa00 }
-    ]
-    
-    groundStations.forEach(gs => {
-      // Convert lat/lon to 3D coordinates
-      const phi = (90 - gs.lat) * (Math.PI / 180)
-      const theta = (gs.lon + 180) * (Math.PI / 180)
-      const radius = 6371 + 50 // Slightly above Earth surface
-      
-      const x = -(radius * Math.sin(phi) * Math.cos(theta))
-      const y = radius * Math.cos(phi)
-      const z = radius * Math.sin(phi) * Math.sin(theta)
-      
-      // Validate coordinates
-      const validX = Number.isFinite(x) ? x : 0
-      const validY = Number.isFinite(y) ? y : 0  
-      const validZ = Number.isFinite(z) ? z : 0
-      
-      // Ground station antenna
-      const gsGeometry = new THREE.ConeGeometry(30, 100, 8)
-      const gsMaterial = new THREE.MeshPhongMaterial({
-        color: gs.color,
-        emissive: gs.color,
-        emissiveIntensity: 0.3
-      })
-      const gsAntenna = new THREE.Mesh(gsGeometry, gsMaterial)
-      gsAntenna.position.set(validX, validY, validZ)
-      gsAntenna.lookAt(0, 0, 0)
-      
-      // Rotating dish animation
-      gsAntenna.userData = { rotationSpeed: 0.02 }
-      
-      // Simple beam indicator (no large range visualization)
-      const beamGeometry = new THREE.CylinderGeometry(2, 20, 100, 8)
-      const beamMaterial = new THREE.MeshBasicMaterial({
-        color: gs.color,
-        transparent: true,
-        opacity: 0.3
-      })
-      const beam = new THREE.Mesh(beamGeometry, beamMaterial)
-      beam.position.copy(gsAntenna.position)
-      beam.lookAt(0, 0, 0)
-      
-      // Ground station label
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')
-      canvas.width = 256
-      canvas.height = 64
-      context.fillStyle = '#00ff88'
-      context.font = '20px "Courier New", monospace'
-      context.fillText(gs.name, 10, 40)
-      
-      const texture = new THREE.CanvasTexture(canvas)
-      const labelMaterial = new THREE.SpriteMaterial({ map: texture })
-      const label = new THREE.Sprite(labelMaterial)
-      label.scale.set(400, 100, 1)
-      label.position.copy(gsAntenna.position)
-      label.position.y += 150
-      
-      groundStationGroup.add(gsAntenna)
-      groundStationGroup.add(beam)
-      groundStationGroup.add(label)
-    })
+    earth.add(groundStationGroup)
+    groundStationGroupRef.current = groundStationGroup
 
     // Grid reference for scale (optional)
     const gridHelper = new THREE.PolarGridHelper(20000, 16, 8, 64, 0x333333, 0x333333)
@@ -250,10 +185,11 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
     // Animation loop
     const animate = () => {
       requestAnimationFrame(animate)
-      
-      // Rotate Earth slowly
-      earth.rotation.y += 0.001
-      
+
+      // NOTE: Earth rotation disabled to keep ground stations aligned with satellite ECEF positions
+      // Satellites are in ECEF coordinates, so Earth must stay fixed for proper visualization
+      // earth.rotation.y += 0.001
+
       // Animate satellite footprints and transmission beams
       if (satelliteGroupRef.current) {
         satelliteGroupRef.current.children.forEach(child => {
@@ -309,6 +245,90 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       renderer.dispose()
     }
   }, [])
+
+  // Update ground stations when simulation data changes
+  useEffect(() => {
+    if (!groundStationGroupRef.current) return
+
+    // Clear existing ground stations
+    groundStationGroupRef.current.clear()
+
+    // Get ground stations from simulation data or use defaults
+    const groundStationsData = simulationData?.ground_stations || {}
+
+    // If no ground stations in data, use defaults for visual reference
+    const defaultStations = {
+      'gs_los_angeles': { name: 'Los Angeles', lat: 34.0522, lon: -118.2437, isSource: true },
+      'gs_tokyo': { name: 'Tokyo', lat: 35.6762, lon: 139.6503, isDestination: true }
+    }
+
+    const stations = Object.keys(groundStationsData).length > 0 ? groundStationsData : defaultStations
+
+    Object.entries(stations).forEach(([gsId, gs]) => {
+      // Convert lat/lon to 3D coordinates
+      const lat = gs.lat || 0
+      const lon = gs.lon || 0
+      const phi = (90 - lat) * (Math.PI / 180)
+      const theta = (lon + 180) * (Math.PI / 180)
+      const radius = 6371 + 50 // Slightly above Earth surface
+
+      const x = -(radius * Math.sin(phi) * Math.cos(theta))
+      const y = radius * Math.cos(phi)
+      const z = radius * Math.sin(phi) * Math.sin(theta)
+
+      // Validate coordinates
+      const validX = Number.isFinite(x) ? x : 0
+      const validY = Number.isFinite(y) ? y : 0
+      const validZ = Number.isFinite(z) ? z : 0
+
+      // Color based on source/destination role
+      const color = gs.isSource ? 0x00ff00 : gs.isDestination ? 0xff4400 : 0xffaa00
+
+      // Ground station antenna
+      const gsGeometry = new THREE.ConeGeometry(40, 120, 8)  // Larger for visibility
+      const gsMaterial = new THREE.MeshPhongMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.5
+      })
+      const gsAntenna = new THREE.Mesh(gsGeometry, gsMaterial)
+      gsAntenna.position.set(validX, validY, validZ)
+      gsAntenna.lookAt(0, 0, 0)
+
+      // Add pulsing ring around ground station for visibility
+      const ringGeometry = new THREE.RingGeometry(80, 120, 32)
+      const ringMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide
+      })
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial)
+      ring.position.set(validX, validY, validZ)
+      ring.lookAt(0, 0, 0)
+
+      // Ground station label
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      canvas.width = 256
+      canvas.height = 64
+      context.fillStyle = gs.isSource ? '#00ff00' : gs.isDestination ? '#ff4400' : '#ffaa00'
+      context.font = 'bold 22px "Courier New", monospace'
+      const label_text = gs.name || gsId.replace('gs_', '').toUpperCase()
+      const roleText = gs.isSource ? ' [SRC]' : gs.isDestination ? ' [DST]' : ''
+      context.fillText(label_text + roleText, 10, 40)
+
+      const texture = new THREE.CanvasTexture(canvas)
+      const labelMaterial = new THREE.SpriteMaterial({ map: texture })
+      const label = new THREE.Sprite(labelMaterial)
+      label.scale.set(500, 125, 1)
+      label.position.set(validX, validY + 200, validZ)
+
+      groundStationGroupRef.current.add(gsAntenna)
+      groundStationGroupRef.current.add(ring)
+      groundStationGroupRef.current.add(label)
+    })
+  }, [simulationData?.ground_stations])
 
   // Update satellites when simulation data changes
   useEffect(() => {
@@ -514,19 +534,26 @@ const SatelliteVisualization = ({ simulationData, isRunning, onSatelliteClick })
       // Clear existing contact lines
       contactLinesRef.current.clear()
 
+      // Debug: Log contacts info
+      const gsContacts = simulationData.contacts.filter(c => c.type === 'ground_station' ||
+        (simulationData.ground_stations && simulationData.ground_stations[c.target_id]))
+      if (gsContacts.length > 0) {
+        console.log(`Drawing ${gsContacts.length} ground station contacts:`, gsContacts.map(c => `${c.source_id} -> ${c.target_id}`))
+      }
+
       // Draw active contact lines with sci-fi beam effects
       simulationData.contacts.forEach((contact, index) => {
       if (contact && contact.isActive && contact.source_id && contact.target_id) {
         // Get position from satellite data using IDs
         let sourcePos = { x: 0, y: 0, z: 0 }
         let targetPos = { x: 0, y: 0, z: 0 }
-        
+
         // Check if source is a satellite
         if (simulationData.satellites && simulationData.satellites[contact.source_id]) {
           sourcePos = simulationData.satellites[contact.source_id].position || sourcePos
         }
-        
-        // Check if target is a satellite  
+
+        // Check if target is a satellite
         if (simulationData.satellites && simulationData.satellites[contact.target_id]) {
           targetPos = simulationData.satellites[contact.target_id].position || targetPos
         } else if (simulationData.ground_stations && simulationData.ground_stations[contact.target_id]) {

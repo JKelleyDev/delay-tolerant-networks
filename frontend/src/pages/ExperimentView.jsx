@@ -20,18 +20,34 @@ const ExperimentView = () => {
     duration: 24,
     bundle_rate: 1.0,
     buffer_size: 10485760, // 10MB
+    ttl_minutes: 60, // Bundle TTL in minutes
     ground_stations: ['gs_los_angeles', 'gs_tokyo'],
     rf_band: 'ka-band', // Default to Ka-band (modern broadband)
     weather_enabled: false, // Weather simulation
     weather_seed: null // Random seed for weather
   })
+  const [experimentPresets, setExperimentPresets] = useState({})
+  const [showPresets, setShowPresets] = useState(false)
 
   useEffect(() => {
     fetchExperiments()
     fetchConstellations()
     fetchGroundStations()
     fetchRfBands()
+    fetchExperimentPresets()
   }, [])
+
+  const fetchExperimentPresets = async () => {
+    try {
+      const response = await fetch('/api/v2/experiment/presets')
+      const data = await response.json()
+      if (data.success) {
+        setExperimentPresets(data.data.presets || {})
+      }
+    } catch (err) {
+      console.error('Failed to fetch experiment presets:', err)
+    }
+  }
 
   const fetchExperiments = async () => {
     try {
@@ -538,6 +554,44 @@ const ExperimentView = () => {
                     min="0.1"
                     max="10"
                   />
+                </div>
+              </div>
+
+              {/* E2/E3 Experiment Parameters */}
+              <div className="mt-4 p-3 bg-gray-800 rounded-lg">
+                <h4 className="text-sm font-medium text-blue-300 mb-3">DTN Parameters (for E2/E3 experiments)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label">Buffer Size</label>
+                    <select
+                      value={formData.buffer_size}
+                      onChange={(e) => setFormData({...formData, buffer_size: Number(e.target.value)})}
+                      className="form-input w-full"
+                    >
+                      <option value={5242880}>5 MB (E2 test)</option>
+                      <option value={10485760}>10 MB (default)</option>
+                      <option value={20971520}>20 MB (E2 test)</option>
+                      <option value={52428800}>50 MB</option>
+                      <option value={83886080}>80 MB (E2 test)</option>
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">Per-satellite bundle buffer size</p>
+                  </div>
+
+                  <div>
+                    <label className="form-label">Bundle TTL</label>
+                    <select
+                      value={formData.ttl_minutes}
+                      onChange={(e) => setFormData({...formData, ttl_minutes: Number(e.target.value)})}
+                      className="form-input w-full"
+                    >
+                      <option value={30}>30 minutes (E3 test)</option>
+                      <option value={60}>1 hour (default)</option>
+                      <option value={120}>2 hours (E3 test)</option>
+                      <option value={240}>4 hours</option>
+                      <option value={480}>8 hours (E3 test)</option>
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">Time-to-live for bundles in the network</p>
+                  </div>
                 </div>
               </div>
 

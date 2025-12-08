@@ -128,7 +128,7 @@ const SimulationView = () => {
     // Start simulation time at 9:00 AM for realistic display
     const baseSimTime = new Date()
     baseSimTime.setHours(9, 0, 0, 0)
-    const timeAcceleration = 3600 // 1 hour per second
+    // Use the state variable timeAcceleration (not a local constant)
     
     const interval = setInterval(async () => {
       try {
@@ -186,23 +186,24 @@ const SimulationView = () => {
             
               setRealTimeData({
                 satellites,
+                ground_stations: simData.ground_stations || {}, // Dynamic ground stations from simulation
                 contacts: contacts, // Processed 3D visualization contacts
                 timelineContacts: simData.contacts || [], // Full contact data for timeline
                 bundles: simData.bundles || { active: 0, delivered: 0, expired: 0 },
                 packetPaths: [], // Real packet paths would go here
                 metrics: {
-                  throughput: Number(simData.metrics?.throughput) || 0,
-                  avgSNR: Number(simData.metrics?.avgSNR) || 45.0,
-                  linkQuality: Number(simData.metrics?.linkQuality) || 98.5,
-                  deliveryRatio: Number(simData.metrics?.deliveryRatio) || 0.85,
-                  avgDelay: Number(simData.metrics?.avgDelay) || 120,
-                  overhead: Number(simData.metrics?.overhead) || 1.2,
-                  avgContactDuration: Number(simData.metrics?.avgContactDuration) || 320.5,
-                  dataTransferred: Number(simData.metrics?.dataTransferred) || 45600,
-                  avgBufferUtilization: Number(simData.metrics?.avgBufferUtilization) || 0.35
+                  throughput: simData.metrics?.throughput !== undefined ? Number(simData.metrics.throughput) : 0,
+                  avgSNR: simData.metrics?.avgSNR !== undefined ? Number(simData.metrics.avgSNR) : 45.0,
+                  linkQuality: simData.metrics?.linkQuality !== undefined ? Number(simData.metrics.linkQuality) : 98.5,
+                  deliveryRatio: simData.metrics?.deliveryRatio !== undefined ? Number(simData.metrics.deliveryRatio) : 0,
+                  avgDelay: simData.metrics?.avgDelay !== undefined ? Number(simData.metrics.avgDelay) : 0,
+                  overhead: simData.metrics?.overhead !== undefined ? Number(simData.metrics.overhead) : 1.0,
+                  avgContactDuration: simData.metrics?.avgContactDuration !== undefined ? Number(simData.metrics.avgContactDuration) : 0,
+                  dataTransferred: simData.metrics?.dataTransferred !== undefined ? Number(simData.metrics.dataTransferred) : 0,
+                  avgBufferUtilization: simData.metrics?.avgBufferUtilization !== undefined ? Number(simData.metrics.avgBufferUtilization) : 0
                 },
                 simTime: simData.simTime || '00:00:00',
-                timeAcceleration: simData.timeAcceleration || timeAcceleration || 1,
+                timeAcceleration: simData.timeAcceleration !== undefined ? simData.timeAcceleration : (timeAcceleration || 1),
                 networkStatus: 'operational',
                 currentSimTime: simData.currentSimTime || 0
               })
@@ -425,6 +426,7 @@ const SimulationView = () => {
         duration: simulationDuration,
         ground_stations: selectedGroundStations,
         time_step: 1.0,
+        time_acceleration: timeAcceleration,
         weather_enabled: weatherEnabled,
         weather_seed: weatherSeed ? parseInt(weatherSeed) : null,
         traffic_pattern: trafficPattern,
@@ -991,7 +993,7 @@ const SimulationView = () => {
                               <div className="mb-2 text-yellow-300 bg-yellow-900 bg-opacity-30 p-1 rounded">
                                 <div className="text-center">
                                   <div className="font-mono">Sim Time: {new Date(simulationDetails[simulation.id].current_sim_time).toLocaleTimeString()}</div>
-                                  <div className="text-xs">Acceleration: {simulationDetails[simulation.id].time_acceleration || 3600}x real-time</div>
+                                  <div className="text-xs">Acceleration: {simulationDetails[simulation.id]?.time_acceleration || timeAcceleration || 1}x real-time</div>
                                 </div>
                                 
                                 {/* Progress bar for simulation duration */}
@@ -1144,7 +1146,7 @@ const SimulationView = () => {
           </div>
         </div>
         
-        <div className="relative h-[600px] bg-black">
+        <div className="relative h-[700px] bg-black">
           {view3D ? (
             <>
               <SatelliteVisualization
@@ -1166,18 +1168,19 @@ const SimulationView = () => {
                   contacts: realTimeData?.contacts || [],
                   bundles: realTimeData?.bundles || { active: 0 },
                   metrics: {
-                    throughput: realTimeData?.metrics?.throughput || 0,
-                    avgSNR: realTimeData?.metrics?.avgSNR || 45.0,
-                    linkQuality: realTimeData?.metrics?.linkQuality || 100,
-                    deliveryRatio: realTimeData?.metrics?.deliveryRatio || 0.85,
-                    avgDelay: realTimeData?.metrics?.avgDelay || 120,
-                    overhead: realTimeData?.metrics?.overhead || 1.2
+                    throughput: realTimeData?.metrics?.throughput ?? 0,
+                    avgSNR: realTimeData?.metrics?.avgSNR ?? 45.0,
+                    linkQuality: realTimeData?.metrics?.linkQuality ?? 100,
+                    deliveryRatio: realTimeData?.metrics?.deliveryRatio ?? 0,
+                    avgDelay: realTimeData?.metrics?.avgDelay ?? 0,
+                    overhead: realTimeData?.metrics?.overhead ?? 1.0,
+                    avgBufferUtilization: realTimeData?.metrics?.avgBufferUtilization ?? 0
                   },
                   rfBand: 'Ka-band',
                   weather: { enabled: false },
                   routing: { algorithm: routingAlgorithm },
                   simTime: realTimeData?.simTime || '00:00:00',
-                  timeAcceleration: realTimeData?.timeAcceleration || 3600,
+                  timeAcceleration: realTimeData?.timeAcceleration || timeAcceleration || 1,
                   networkStatus: realTimeData?.networkStatus || 'operational',
                   fps: 60
                 }}
@@ -1207,62 +1210,6 @@ const SimulationView = () => {
             isRunning={isSimulationRunning}
           />
           
-          {/* Network Statistics Panel */}
-          <div className="bg-black border border-blue-400 p-4">
-            <div className="text-blue-400 text-sm mb-4 font-mono">
-              ◤ NETWORK STATISTICS ◥
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Total Contacts:</span>
-                  <span className="text-green-400">{realTimeData?.contacts?.length || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Active Contacts:</span>
-                  <span className="text-yellow-400">
-                    {realTimeData?.contacts?.filter(c => c.isActive)?.length || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Avg Contact Duration:</span>
-                  <span className="text-cyan-400">
-                    {(realTimeData?.metrics?.avgContactDuration || 0).toFixed(1)}s
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Data Transferred:</span>
-                  <span className="text-purple-400">
-                    {((realTimeData?.metrics?.dataTransferred || 0) / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Routing Efficiency:</span>
-                  <span className="text-green-400">
-                    {(((realTimeData?.metrics?.overhead || 1) > 0 ? (1 / (realTimeData?.metrics?.overhead || 1)) : 1) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Network Load:</span>
-                  <span className="text-orange-400">
-                    {((realTimeData?.metrics?.avgBufferUtilization || 0) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Packets in Flight:</span>
-                  <span className="text-blue-400">{realTimeData?.bundles?.active || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Success Rate:</span>
-                  <span className="text-green-400">
-                    {((realTimeData?.metrics?.deliveryRatio || 0) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       ) : (
         <div className="text-center text-gray-400 py-8">

@@ -45,23 +45,27 @@ const MilitaryHUD = ({ simulationData, isRunning, selectedSatellite }) => {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Active Links:</span>
-              <span className="text-yellow-400">{activeContacts}</span>
+              <span className="text-yellow-400">{simulationData?.metrics?.activeContacts || activeContacts}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-300">Bundles Active:</span>
-              <span className="text-blue-400">{activeBundles}</span>
+              <span className="text-gray-300">Bundles Gen:</span>
+              <span className="text-cyan-400">{simulationData?.bundles?.generated || 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">In Buffers:</span>
+              <span className="text-blue-400">{simulationData?.bundles?.in_buffers || activeBundles}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Delivered:</span>
               <span className="text-green-400">{simulationData?.bundles?.delivered || 0}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-300">Expired:</span>
-              <span className="text-red-400">{simulationData?.bundles?.expired || 0}</span>
+              <span className="text-gray-300">Sats w/ Data:</span>
+              <span className="text-purple-400">{simulationData?.metrics?.satellitesWithBundles || 0}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Throughput:</span>
-              <span className="text-purple-400">{networkThroughput.toFixed(1)} Mbps</span>
+              <span className="text-purple-400">{networkThroughput.toFixed(1)} bndl/hr</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Buffer Util:</span>
