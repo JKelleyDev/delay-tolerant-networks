@@ -79,6 +79,7 @@ class SimulationMetrics:
     average_delivery_delay: float = 0.0
     network_overhead_ratio: float = 0.0
     throughput_bundles_per_hour: float = 0.0
+    delivery_delays: List[float] = field(default_factory=list)  # Track all delivery delays
 
 class RealTimeSimulationEngine:
     """
@@ -199,6 +200,15 @@ class RealTimeSimulationEngine:
         self.is_running = False
         self.is_paused = False
         logger.info(f"Stopped simulation {self.simulation_id}")
+
+    def set_time_acceleration(self, acceleration: float) -> bool:
+        """Set the time acceleration factor dynamically."""
+        if acceleration <= 0:
+            return False
+        self.time_acceleration = acceleration
+        self.metrics.time_acceleration = acceleration
+        logger.info(f"Time acceleration changed to {acceleration}x for simulation {self.simulation_id}")
+        return True
     
     async def _simulation_loop(self):
         """Main simulation loop with time-stepped updates."""
@@ -292,46 +302,68 @@ class RealTimeSimulationEngine:
         # Clean up expired contacts
         for contact_key in expired_contacts:
             del self.active_contacts[contact_key]
-        
-        # Debug log every 10 seconds of sim time (but only in high-acceleration mode to reduce spam)
-        if self.time_acceleration > 10000 and int(self.current_sim_time.timestamp()) % 60 == 0:
-            logger.info(f"Contact update: {contact_checks} checks, {visible_checks} visible, {len(self.active_contacts)} active")
-        
+
+        # Log contact updates every 10 simulation seconds
+        sim_seconds = int((self.current_sim_time - self.start_time).total_seconds())
+        if sim_seconds % 10 == 0 and sim_seconds > 0:
+            gs_names = [gs.name for gs in self.ground_stations.values()]
+            active_gs_contacts = [c for c in self.active_contacts.keys() if any(gs_id in c for gs_id in self.ground_stations.keys())]
+            logger.info(f"[SimTime +{sim_seconds}s] Contacts: {visible_checks}/{contact_checks} visible, {len(self.active_contacts)} active GS contacts, Ground stations: {gs_names}")
+            if new_contacts:
+                logger.info(f"  New contacts: {new_contacts}")
+            if expired_contacts:
+                logger.info(f"  Ended contacts: {expired_contacts}")
+
         # Update metrics
         self.metrics.active_contact_windows = len(self.active_contacts)
         self.metrics.total_contact_windows = len(self.completed_contacts) + len(self.active_contacts)
     
     def _check_satellite_visibility(self, sat_state: SatelliteState, ground_station: GroundStation) -> bool:
-        """Simplified visibility check between satellite and ground station."""
-        # Calculate distance between satellite and ground station (ECEF coordinates)
-        sat_pos = sat_state.position  # Already in ECEF from orbital mechanics
-        
-        # Convert ground station lat/lon to approximate ECEF (simplified)
+        """Visibility check between satellite and ground station with proper coordinate conversion."""
         import math
+
+        # Satellite position is in ECI (Earth-Centered Inertial)
+        # We need to convert to ECEF (Earth-Centered Earth-Fixed) to compare with ground station
+        sat_eci = sat_state.position  # (x, y, z) in ECI
+
+        # Calculate Greenwich Mean Sidereal Time for ECI to ECEF conversion
+        j2000_epoch = datetime(2000, 1, 1, 12, 0, 0)
+        days_since_j2000 = (self.current_sim_time - j2000_epoch).total_seconds() / 86400.0
+        gmst = 18.697374558 + 24.06570982441908 * days_since_j2000
+        gmst = (gmst % 24) * 15  # Convert to degrees
+        gmst_rad = math.radians(gmst)
+
+        # Rotate ECI to ECEF
+        cos_gmst, sin_gmst = math.cos(gmst_rad), math.sin(gmst_rad)
+        sat_ecef_x = cos_gmst * sat_eci[0] + sin_gmst * sat_eci[1]
+        sat_ecef_y = -sin_gmst * sat_eci[0] + cos_gmst * sat_eci[1]
+        sat_ecef_z = sat_eci[2]
+        sat_pos = (sat_ecef_x, sat_ecef_y, sat_ecef_z)
+
+        # Convert ground station lat/lon to ECEF
         lat_rad = math.radians(ground_station.position.latitude)
         lon_rad = math.radians(ground_station.position.longitude)
         earth_radius = 6371.0  # km
-        
+
         gs_x = (earth_radius + ground_station.position.altitude) * math.cos(lat_rad) * math.cos(lon_rad)
         gs_y = (earth_radius + ground_station.position.altitude) * math.cos(lat_rad) * math.sin(lon_rad)
         gs_z = (earth_radius + ground_station.position.altitude) * math.sin(lat_rad)
-        
+
         gs_pos = (gs_x, gs_y, gs_z)
         distance = calculate_distance(sat_pos, gs_pos)
-        
-        # More generous visibility check for simulation
+
         # Check if satellite is above horizon (distance from earth center > earth radius)
         sat_distance_from_earth = calculate_distance(sat_pos, (0, 0, 0))
         if sat_distance_from_earth < earth_radius + 100:  # At least 100km altitude
             return False
-            
-        # Generous range check - satellites in LEO should be visible
-        max_range = max(ground_station.max_range, 3000.0)  # At least 3000km range
+
+        # Visibility range check - LEO satellites visible up to ~2500km from ground station
+        max_range = max(ground_station.max_range, 2500.0)  # Realistic LEO visibility range
         is_visible = distance <= max_range
-        
+
         if is_visible:
-            logger.debug(f"Satellite at {sat_pos} visible from {ground_station.name} at distance {distance:.1f}km")
-        
+            logger.debug(f"Satellite at ECEF {sat_pos} visible from {ground_station.name} at distance {distance:.1f}km")
+
         return is_visible
     
     async def _generate_bundles(self):
@@ -520,6 +552,7 @@ class RealTimeSimulationEngine:
                             
                             # Calculate delivery delay
                             delivery_delay = (self.current_sim_time - bundle.creation_time).total_seconds()
+                            self.metrics.delivery_delays.append(delivery_delay)  # Track all delays
                             if self.metrics.bundles_delivered > 0:
                                 # Update average delay
                                 current_avg = self.metrics.average_delivery_delay
@@ -548,7 +581,12 @@ class RealTimeSimulationEngine:
         """Get current simulation status and metrics."""
         with self._state_lock:
             runtime_seconds = (self.current_sim_time - self.start_time).total_seconds()
-            
+
+            # Calculate average buffer utilization across satellites
+            total_bundles_in_buffers = sum(len(sat.stored_bundles) for sat in self.satellite_states.values())
+            max_buffer_capacity = len(self.satellite_states) * 100  # Assume 100 bundles max per satellite
+            avg_buffer_utilization = total_bundles_in_buffers / max(1, max_buffer_capacity)
+
             return {
                 "simulation_id": self.simulation_id,
                 "status": "running" if self.is_running and not self.is_paused else "paused" if self.is_paused else "stopped",
@@ -565,7 +603,9 @@ class RealTimeSimulationEngine:
                 "delivery_ratio": self.metrics.bundles_delivered / max(1, self.metrics.total_bundles_generated),
                 "average_delay_seconds": self.metrics.average_delivery_delay,
                 "throughput_bundles_per_hour": self.metrics.throughput_bundles_per_hour,
-                "network_overhead_ratio": self.metrics.network_overhead_ratio
+                "network_overhead_ratio": self.metrics.network_overhead_ratio,
+                "avg_buffer_utilization": avg_buffer_utilization,
+                "total_bundles_in_buffers": total_bundles_in_buffers
             }
     
     def get_detailed_metrics(self) -> Dict:
@@ -590,8 +630,88 @@ class RealTimeSimulationEngine:
                 "completed_contacts": len(self.completed_contacts),
                 "active_contacts": len(self.active_contacts),
                 "total_contact_time_minutes": sum(
-                    (contact.end_time - contact.start_time).total_seconds() / 60 
+                    (contact.end_time - contact.start_time).total_seconds() / 60
                     for contact in self.completed_contacts
                 )
             }
         }
+
+    def get_delivery_delays(self) -> List[float]:
+        """Get all delivery delays for distribution analysis."""
+        return self.metrics.delivery_delays.copy()
+
+    def get_buffer_fill_levels(self) -> Dict[str, Dict]:
+        """Get buffer fill levels for all satellites."""
+        buffer_levels = {}
+        for sat_id, sat_state in self.satellite_states.items():
+            buffer_levels[sat_id] = {
+                'satellite_id': sat_id,
+                'bundles_stored': len(sat_state.stored_bundles),
+                'bundle_ids': sat_state.stored_bundles[:10],  # Limit for efficiency
+                'has_active_contacts': len(sat_state.active_contacts) > 0
+            }
+        return buffer_levels
+
+    def add_contact_window(
+        self,
+        source_id: str,
+        target_id: str,
+        start_time: Optional[datetime] = None,
+        duration_seconds: float = 300,
+        data_rate_mbps: float = 100.0
+    ):
+        """Add a new contact window dynamically (mid-run plan change)."""
+        if start_time is None:
+            start_time = self.current_sim_time
+
+        end_time = start_time + timedelta(seconds=duration_seconds)
+        contact_key = f"{source_id}_{target_id}"
+
+        contact_window = SimContactWindow(
+            satellite_id=source_id,
+            ground_station_id=target_id,
+            start_time=start_time,
+            end_time=end_time,
+            max_elevation=45.0,
+            data_rate_mbps=data_rate_mbps,
+            is_active=True
+        )
+
+        with self._state_lock:
+            self.active_contacts[contact_key] = contact_window
+            # Update satellite state if source is a satellite
+            if source_id in self.satellite_states:
+                self.satellite_states[source_id].active_contacts.add(target_id)
+
+        logger.info(f"Plan change: Added contact window {source_id} -> {target_id} for {duration_seconds}s")
+
+    def remove_contact_windows(self, source_id: str, target_id: str):
+        """Remove contact windows between specific nodes (mid-run plan change)."""
+        contact_key = f"{source_id}_{target_id}"
+
+        with self._state_lock:
+            if contact_key in self.active_contacts:
+                contact = self.active_contacts[contact_key]
+                contact.is_active = False
+                contact.end_time = self.current_sim_time
+                self.completed_contacts.append(contact)
+                del self.active_contacts[contact_key]
+
+                # Update satellite state if source is a satellite
+                if source_id in self.satellite_states:
+                    self.satellite_states[source_id].active_contacts.discard(target_id)
+
+                logger.info(f"Plan change: Removed contact window {source_id} -> {target_id}")
+
+    def modify_contact_duration(self, source_id: str, target_id: str, duration_multiplier: float = 1.0):
+        """Modify duration of active/future contacts (mid-run plan change)."""
+        contact_key = f"{source_id}_{target_id}"
+
+        with self._state_lock:
+            if contact_key in self.active_contacts:
+                contact = self.active_contacts[contact_key]
+                original_duration = (contact.end_time - contact.start_time).total_seconds()
+                new_duration = original_duration * duration_multiplier
+                contact.end_time = contact.start_time + timedelta(seconds=new_duration)
+
+                logger.info(f"Plan change: Modified contact {source_id} -> {target_id} duration to {new_duration:.1f}s")

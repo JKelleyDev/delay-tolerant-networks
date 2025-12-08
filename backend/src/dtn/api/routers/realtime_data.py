@@ -396,34 +396,180 @@ class SimulationDataGenerator:
 async def get_real_time_data(simulation_id: str):
     """Get real-time simulation data."""
     try:
-        # Initialize simulation if not exists
+        # Try to get real data from running simulation engine
+        try:
+            from dtn.api.app import simulation_engines
+
+            if simulation_id in simulation_engines:
+                engine = simulation_engines[simulation_id]
+
+                # Check if engine is ready
+                if engine.is_running and hasattr(engine, 'satellite_states') and engine.satellite_states:
+                    status = engine.get_current_status()
+
+                    # Calculate GMST for ECI to ECEF conversion
+                    import math
+                    from datetime import datetime as dt
+                    j2000_epoch = dt(2000, 1, 1, 12, 0, 0)
+                    days_since_j2000 = (engine.current_sim_time - j2000_epoch).total_seconds() / 86400.0
+                    gmst = 18.697374558 + 24.06570982441908 * days_since_j2000
+                    gmst = (gmst % 24) * 15  # Convert to degrees
+                    gmst_rad = math.radians(gmst)
+                    cos_gmst, sin_gmst = math.cos(gmst_rad), math.sin(gmst_rad)
+
+                    # Get satellite positions from engine safely - convert ECI to ECEF for visualization
+                    satellites = {}
+                    for sat_id, sat_state in engine.satellite_states.items():
+                        try:
+                            # Convert ECI to ECEF for proper Earth-relative visualization
+                            eci_x, eci_y, eci_z = sat_state.position
+                            ecef_x = cos_gmst * eci_x + sin_gmst * eci_y
+                            ecef_y = -sin_gmst * eci_x + cos_gmst * eci_y
+                            ecef_z = eci_z
+
+                            # Convert ECEF to Three.js coordinate system:
+                            # ECEF: X=prime meridian, Y=90°E, Z=North Pole
+                            # Three.js (with Earth texture): Y=North Pole (up), uses lon+180° offset
+                            # Frontend formula: x = -(R*sin(phi)*cos(theta)), y = R*cos(phi), z = R*sin(phi)*sin(theta)
+                            # where theta = lon + 180°, which negates sin(lon) term
+                            three_x = ecef_x
+                            three_y = ecef_z   # Z (north pole) becomes Y (up)
+                            three_z = -ecef_y  # Y becomes Z, negated to match lon+180° offset
+
+                            satellites[sat_id] = {
+                                'position': {'x': three_x, 'y': three_y, 'z': three_z},
+                                'velocity': {'x': sat_state.velocity[0], 'y': sat_state.velocity[2], 'z': sat_state.velocity[1]},
+                                'status': 'active',
+                                'buffer_utilization': len(sat_state.stored_bundles) / 100.0 if sat_state.stored_bundles else 0,
+                                'bundles_stored': len(sat_state.stored_bundles) if sat_state.stored_bundles else 0,
+                                'contacts': len(sat_state.active_contacts) if sat_state.active_contacts else 0
+                            }
+                        except Exception as e:
+                            logger.warning(f"Error processing satellite {sat_id}: {e}")
+                            continue
+
+                    # Get active contacts from engine safely - GROUND STATION CONTACTS ONLY
+                    contacts = []
+                    if hasattr(engine, 'active_contacts') and engine.active_contacts:
+                        for contact_key, contact in engine.active_contacts.items():
+                            try:
+                                sat_id = getattr(contact, 'satellite_id', 'unknown')
+                                gs_id = getattr(contact, 'ground_station_id', 'unknown')
+                                # Check if satellite has bundles - this determines hasData
+                                sat_has_bundles = False
+                                if sat_id in engine.satellite_states:
+                                    sat_has_bundles = len(engine.satellite_states[sat_id].stored_bundles) > 0
+                                contacts.append({
+                                    'contact_id': contact_key,
+                                    'source_id': sat_id,
+                                    'target_id': gs_id,
+                                    'isActive': True,
+                                    'hasData': sat_has_bundles,  # True only if satellite has bundles
+                                    'data_rate': getattr(contact, 'data_rate_mbps', 100.0),
+                                    'type': 'ground_station'  # Mark as ground station contact
+                                })
+                                logger.debug(f"Ground station contact: {sat_id} -> {gs_id}, hasData={sat_has_bundles}")
+                            except Exception as e:
+                                logger.warning(f"Error processing contact {contact_key}: {e}")
+                                continue
+
+                    # Track satellites with bundles for metrics
+                    sat_ids_with_bundles = [
+                        sat_id for sat_id, sat_state in engine.satellite_states.items()
+                        if sat_state.stored_bundles
+                    ]
+
+                    # Log debug info about contacts
+                    if len(contacts) > 0:
+                        logger.info(f"Active ground station contacts: {len(contacts)}, Satellites with bundles: {len(sat_ids_with_bundles)}")
+
+                    # Calculate total bundles in satellite buffers
+                    total_bundles_in_buffers = sum(
+                        len(sat_state.stored_bundles) for sat_state in engine.satellite_states.values()
+                    )
+
+                    # Get ground stations from engine for visualization
+                    ground_stations_data = {}
+                    if hasattr(engine, 'ground_stations') and engine.ground_stations:
+                        for gs_id, gs in engine.ground_stations.items():
+                            try:
+                                ground_stations_data[gs_id] = {
+                                    'name': getattr(gs, 'name', gs_id),
+                                    'lat': gs.position.latitude if hasattr(gs, 'position') else 0,
+                                    'lon': gs.position.longitude if hasattr(gs, 'position') else 0,
+                                    'elevation': gs.position.altitude * 1000 if hasattr(gs, 'position') else 0,  # Convert km to m
+                                    'isSource': gs_id == list(engine.ground_stations.keys())[0],
+                                    'isDestination': gs_id == list(engine.ground_stations.keys())[1] if len(engine.ground_stations) > 1 else False
+                                }
+                            except Exception as e:
+                                logger.warning(f"Error processing ground station {gs_id}: {e}")
+
+                    # Build response with real data
+                    state = {
+                        'satellites': satellites,
+                        'ground_stations': ground_stations_data,
+                        'contacts': contacts,
+                        'bundles': {
+                            'generated': status.get('bundles_generated', 0),
+                            'active': status.get('bundles_in_transit', 0),
+                            'in_buffers': total_bundles_in_buffers,
+                            'delivered': status.get('bundles_delivered', 0),
+                            'expired': 0
+                        },
+                        'metrics': {
+                            'throughput': status.get('throughput_bundles_per_hour', 0),
+                            'avgSNR': 45.0,
+                            'linkQuality': 98.0,
+                            'deliveryRatio': status.get('delivery_ratio', 0),
+                            'avgDelay': status.get('average_delay_seconds', 0),
+                            'overhead': status.get('network_overhead_ratio', 1.0),
+                            'avgBufferUtilization': status.get('avg_buffer_utilization', 0),
+                            'activeContacts': len(engine.active_contacts) if hasattr(engine, 'active_contacts') else 0,
+                            'satellitesWithBundles': len(sat_ids_with_bundles)
+                        },
+                        'simTime': status.get('current_sim_time', '00:00:00'),
+                        'timeAcceleration': status.get('time_acceleration', 1),
+                        'currentSimTime': status.get('runtime_seconds', 0)
+                    }
+
+                    return APIResponse(
+                        success=True,
+                        message="Real-time data from simulation engine",
+                        data=state
+                    )
+        except ImportError as e:
+            logger.warning(f"Could not import simulation_engines: {e}")
+        except Exception as e:
+            logger.warning(f"Error getting real simulation data: {e}")
+
+        # Fall back to mock visualization data if no running engine or error
         if simulation_id not in active_simulations:
             generator = SimulationDataGenerator(simulation_id)
             active_simulations[simulation_id] = {
                 'generator': generator,
                 'last_update': datetime.now()
             }
-            logger.info(f"Initialized real-time data for simulation {simulation_id}")
-        
+            logger.info(f"Initialized mock real-time data for simulation {simulation_id}")
+
         # Update simulation state
         sim_data = active_simulations[simulation_id]
         generator = sim_data['generator']
         last_update = sim_data['last_update']
-        
+
         # Calculate elapsed time
         now = datetime.now()
         elapsed = (now - last_update).total_seconds()
-        
+
         # Update simulation
         state = generator.update_simulation(elapsed)
         sim_data['last_update'] = now
-        
+
         return APIResponse(
             success=True,
             message="Real-time data retrieved successfully",
             data=state
         )
-        
+
     except Exception as e:
         logger.error(f"Error getting real-time data for {simulation_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -612,33 +758,67 @@ class AccelerationRequest(BaseModel):
 async def set_time_acceleration(simulation_id: str, request: AccelerationRequest):
     """Set time acceleration for a simulation."""
     try:
-        if simulation_id not in active_simulations:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Simulation '{simulation_id}' not found in real-time data system. Available: {list(active_simulations.keys())}"
-            )
-        
         acceleration = request.acceleration
-        
+
         if acceleration <= 0:
             raise HTTPException(status_code=400, detail="Acceleration must be a positive number")
-        
-        generator = active_simulations[simulation_id]['generator']
-        success = generator.set_time_acceleration(float(acceleration))
-        
-        if success:
+
+        engine_updated = False
+        previous_acceleration = 1
+
+        # Try to update real simulation engine if available
+        try:
+            from dtn.api.app import simulation_engines
+
+            if simulation_id in simulation_engines:
+                engine = simulation_engines[simulation_id]
+                previous_acceleration = getattr(engine, 'time_acceleration', 1)
+                if hasattr(engine, 'set_time_acceleration'):
+                    success = engine.set_time_acceleration(float(acceleration))
+                    if success:
+                        engine_updated = True
+                        logger.info(f"Updated real simulation engine acceleration to {acceleration}x")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"Could not update simulation engine: {e}")
+
+        # Also update the visualization generator if it exists
+        if simulation_id in active_simulations:
+            generator = active_simulations[simulation_id]['generator']
+            previous_acceleration = getattr(generator, 'time_acceleration', 1)
+            generator.set_time_acceleration(float(acceleration))
+
+        if engine_updated or simulation_id in active_simulations:
             return APIResponse(
                 success=True,
                 message=f"Time acceleration set to {acceleration}x",
                 data={
                     'simulation_id': simulation_id,
                     'acceleration': acceleration,
-                    'previous_acceleration': generator.time_acceleration
+                    'previous_acceleration': previous_acceleration,
+                    'engine_updated': engine_updated
                 }
             )
         else:
-            raise HTTPException(status_code=400, detail="Invalid acceleration value")
-            
+            # Create a new generator for this simulation if neither exists
+            generator = SimulationDataGenerator(simulation_id)
+            generator.set_time_acceleration(float(acceleration))
+            active_simulations[simulation_id] = {
+                'generator': generator,
+                'last_update': datetime.now()
+            }
+            return APIResponse(
+                success=True,
+                message=f"Time acceleration set to {acceleration}x (new visualization created)",
+                data={
+                    'simulation_id': simulation_id,
+                    'acceleration': acceleration,
+                    'previous_acceleration': 1,
+                    'engine_updated': False
+                }
+            )
+
     except HTTPException:
         raise
     except Exception as e:

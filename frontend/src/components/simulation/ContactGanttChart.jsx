@@ -33,7 +33,13 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
     const currentSimTime = simulationData.currentSimTime || 0
     const startTime = currentSimTime
     const endTime = startTime + timeWindow
-    
+
+    // Calculate simulated time for progress indicators (moved up to avoid reference error)
+    const timeAcceleration = simulationData.timeAcceleration || 1
+    const realTimeStart = animationTime / 1000
+    const timeSinceStart = realTimeStart - (realTimeStart % 60)
+    const simulatedTime = currentSimTime + (timeSinceStart * timeAcceleration / 60) % timeWindow
+
     const satellites = Object.keys(simulationData.satellites)
     const maxVisibleRows = Math.floor((height - 60) / 25) // Reserve space for legend
     const rowHeight = 25
@@ -249,15 +255,7 @@ const ContactGanttChart = ({ simulationData, selectedSatellite, isRunning }) => 
       }
     })
     
-    // Current time indicator - moves with simulation time
-    const realTimeSeconds = Date.now() / 1000
-    const timeAcceleration = simulationData.timeAcceleration || 1
-    const realTimeStart = animationTime / 1000  // Use animation time for consistency
-    
-    // Calculate simulated time progression based on acceleration
-    const timeSinceStart = realTimeStart - (realTimeStart % 60) // Reset every minute for smooth animation
-    const simulatedTime = currentSimTime + (timeSinceStart * timeAcceleration / 60) % timeWindow
-    
+    // Current time indicator - moves with simulation time (simulatedTime already calculated above)
     const timeProgressInWindow = simulatedTime / timeWindow
     const currentTimeX = 80 + (timeProgressInWindow * (width - 100))
     

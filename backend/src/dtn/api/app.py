@@ -585,14 +585,15 @@ async def start_simulation(simulation_id: str):
                 raise HTTPException(status_code=400, detail="No valid ground stations found for simulation")
             
             # Create real-time simulation engine
-            time_acceleration = 3600.0  # 1 hour sim time per 1 second real time
+            time_acceleration = float(simulation_config.get("time_acceleration", 1.0))  # Default to 1x (real-time)
+            bundle_rate = float(simulation_config.get("bundle_rate", 1.0))  # Use frontend config, default 1 bundle/sec
             simulation_engines[simulation_id] = RealTimeSimulationEngine(
                 simulation_id=simulation_id,
                 constellation_elements=satellite_elements,
                 ground_stations=selected_gs_dict,
                 routing_algorithm=simulation_config.get("routing_algorithm", "epidemic"),
                 time_acceleration=time_acceleration,
-                bundle_generation_rate=0.2  # bundles per simulation second
+                bundle_generation_rate=bundle_rate  # Use configured bundle rate
             )
         
         # Start the simulation engine
@@ -835,6 +836,7 @@ async def create_experiment(config: dict):
         "duration": config["duration"],
         "bundle_rate": config.get("bundle_rate", 1.0),
         "buffer_size": config.get("buffer_size", 10485760),
+        "ttl_minutes": config.get("ttl_minutes", 60),  # Bundle TTL in minutes
         "ground_stations": ground_stations,
         "source_station": ground_stations[0],
         "destination_station": ground_stations[1],
@@ -918,7 +920,9 @@ async def run_experiment(experiment_id: str):
                 ground_stations=experiment["ground_stations"],
                 rf_band=experiment.get("rf_band", "ka-band"),
                 weather_enabled=experiment.get("weather_enabled", False),
-                weather_seed=experiment.get("weather_seed")
+                weather_seed=experiment.get("weather_seed"),
+                buffer_size=experiment.get("buffer_size", 10485760),  # 10MB default
+                ttl_minutes=experiment.get("ttl_minutes", 60)  # 60 min default
             )
             
             results[algorithm] = sim_results
@@ -957,14 +961,17 @@ async def run_fast_orbital_experiment(
     temp_sim_id: str,
     rf_band: str = "ka-band",
     weather_enabled: bool = False,
-    weather_seed: int = None
+    weather_seed: int = None,
+    buffer_size: int = 10485760,  # 10MB default
+    ttl_minutes: int = 60  # 60 minutes default
 ) -> dict:
     """Run a fast orbital simulation for experiments - completes in seconds."""
     from dtn.orbital.mechanics import OrbitalMechanics
     from dtn.orbital.contact_prediction import ContactPredictor, LinkBudget
     import random
-    
+
     logger.info(f"Fast orbital experiment: {len(satellite_elements)} satellites, {duration_hours}h duration, {routing_algorithm} routing")
+    logger.info(f"Experiment config: buffer_size={buffer_size/1048576:.1f}MB, ttl={ttl_minutes}min")
     
     # Initialize orbital mechanics and weather-aware contact prediction
     orbital_mechanics = OrbitalMechanics()
@@ -1004,6 +1011,13 @@ async def run_fast_orbital_experiment(
     # Bundle tracking
     active_bundles = {}  # bundle_id -> {creation_time, current_satellites, hops, delivered}
     bundle_counter = 0
+
+    # Buffer management - track bundles per satellite
+    # Assume average bundle size of 1KB (1024 bytes) for buffer calculations
+    avg_bundle_size = 1024
+    max_bundles_per_satellite = buffer_size // avg_bundle_size  # e.g., 10MB / 1KB = 10240 bundles
+    satellite_buffer_usage = {}  # satellite_id -> bundle count
+    bundles_dropped_buffer_full = 0
     
     logger.info(f"Fast experiment: {total_steps} steps x {time_step_minutes}min = {total_steps * time_step_minutes / 60:.1f}h simulation")
     
@@ -1175,15 +1189,16 @@ async def run_fast_orbital_experiment(
             
             # Skip if bundle has been in network too long (TTL expiry)
             bundle_age = (current_time - bundle_info['creation_time']).total_seconds()
-            if bundle_age > 3600:  # 1 hour TTL
-                bundle_info['delivered'] = True  # Mark as expired
+            ttl_seconds = ttl_minutes * 60  # Use configurable TTL
+            if bundle_age > ttl_seconds:
+                bundle_info['delivered'] = True  # Mark as expired (TTL exceeded)
                 continue
                 
             if routing_algorithm == "epidemic":
                 # Epidemic: replicate to contact opportunities
                 current_sats = list(bundle_info['current_satellites'])
                 new_satellites = set(current_sats)
-                
+
                 # For each satellite carrying the bundle, replicate to neighbors
                 for sat_id in current_sats:
                     if len(new_satellites) < 15:  # Reasonable replication limit
@@ -1192,13 +1207,19 @@ async def run_fast_orbital_experiment(
                         if nearby_sats:
                             # Add 1-2 new satellites per step
                             new_sats = random.sample(nearby_sats, min(2, len(nearby_sats)))
-                            # Count each replication as a transmission
+                            # Count each replication as a transmission (with buffer check)
                             for new_sat in new_sats:
                                 if new_sat not in new_satellites:
-                                    total_bundle_transmissions += 1
-                                    total_bundle_replications += 1
-                            new_satellites.update(new_sats)
-                
+                                    # Check buffer capacity
+                                    current_usage = satellite_buffer_usage.get(new_sat, 0)
+                                    if current_usage < max_bundles_per_satellite:
+                                        total_bundle_transmissions += 1
+                                        total_bundle_replications += 1
+                                        new_satellites.add(new_sat)
+                                        satellite_buffer_usage[new_sat] = current_usage + 1
+                                    else:
+                                        bundles_dropped_buffer_full += 1
+
                 bundle_info['current_satellites'] = new_satellites
                 bundle_info['hops'] += 1
                 # Update bundle copy count
@@ -1208,19 +1229,24 @@ async def run_fast_orbital_experiment(
                 # PRoPHET: smart forwarding based on delivery predictability
                 current_sats = list(bundle_info['current_satellites'])
                 new_satellites = set(current_sats)
-                
+
                 # Forward to satellites with better "connectivity" (heuristic)
                 if bundle_info['hops'] < 5 and random.random() < 0.6:  # 60% forwarding probability
                     candidates = [s for s in satellite_positions.keys() if s not in current_sats]
                     if candidates:
                         # Choose 1-2 satellites with "better" position (random for simulation)
                         selected = random.sample(candidates, min(2, len(candidates)))
-                        # Count each forwarding as a transmission
+                        # Count each forwarding as a transmission (with buffer check)
                         for new_sat in selected:
-                            total_bundle_transmissions += 1
-                            total_bundle_replications += 1
-                        new_satellites.update(selected)
-                
+                            current_usage = satellite_buffer_usage.get(new_sat, 0)
+                            if current_usage < max_bundles_per_satellite:
+                                total_bundle_transmissions += 1
+                                total_bundle_replications += 1
+                                new_satellites.add(new_sat)
+                                satellite_buffer_usage[new_sat] = current_usage + 1
+                            else:
+                                bundles_dropped_buffer_full += 1
+
                 bundle_info['current_satellites'] = new_satellites
                 bundle_info['hops'] += 1
                 # Update bundle copy count
@@ -1234,13 +1260,19 @@ async def run_fast_orbital_experiment(
                     candidates = [s for s in satellite_positions.keys() if s not in current_sats]
                     if candidates:
                         new_sat = random.choice(candidates)
-                        bundle_info['current_satellites'].add(new_sat)
-                        bundle_info['hops'] += 1
-                        # Count spray transmission
-                        total_bundle_transmissions += 1
-                        total_bundle_replications += 1
-                        # Update bundle copy count
-                        bundle_copy_tracking[bundle_id] = len(bundle_info['current_satellites'])
+                        # Check buffer capacity before adding
+                        current_usage = satellite_buffer_usage.get(new_sat, 0)
+                        if current_usage < max_bundles_per_satellite:
+                            bundle_info['current_satellites'].add(new_sat)
+                            bundle_info['hops'] += 1
+                            # Count spray transmission
+                            total_bundle_transmissions += 1
+                            total_bundle_replications += 1
+                            satellite_buffer_usage[new_sat] = current_usage + 1
+                            # Update bundle copy count
+                            bundle_copy_tracking[bundle_id] = len(bundle_info['current_satellites'])
+                        else:
+                            bundles_dropped_buffer_full += 1
                 # Wait phase: no forwarding, just wait for direct delivery
         
         # Check for bundle delivery at destination with RF-aware transmission
@@ -1376,7 +1408,13 @@ async def run_fast_orbital_experiment(
             # Weather Effects metrics
             "weather_enabled": weather_enabled,
             "weather_affected_contacts": weather_affected_contacts,
-            "average_weather_attenuation_db": sum(weather_attenuation_samples) / len(weather_attenuation_samples) if weather_attenuation_samples else 0.0
+            "average_weather_attenuation_db": sum(weather_attenuation_samples) / len(weather_attenuation_samples) if weather_attenuation_samples else 0.0,
+
+            # Buffer and TTL metrics
+            "buffer_size_bytes": buffer_size,
+            "ttl_minutes": ttl_minutes,
+            "bundles_dropped_buffer_full": bundles_dropped_buffer_full,
+            "max_bundles_per_satellite": max_bundles_per_satellite
         }
     }
 
@@ -1389,7 +1427,9 @@ async def simulate_algorithm_performance_realtime(
     ground_stations: list,
     rf_band: str = "ka-band",
     weather_enabled: bool = False,
-    weather_seed: int = None
+    weather_seed: int = None,
+    buffer_size: int = 10485760,  # 10MB default
+    ttl_minutes: int = 60  # 60 minutes default
 ) -> dict:
     """Run real-time simulation for experiment with actual DTN routing."""
     import time
@@ -1444,7 +1484,9 @@ async def simulate_algorithm_performance_realtime(
         temp_sim_id=temp_sim_id,
         rf_band=rf_band,
         weather_enabled=weather_enabled,
-        weather_seed=weather_seed
+        weather_seed=weather_seed,
+        buffer_size=buffer_size,
+        ttl_minutes=ttl_minutes
     )
     
     # Log the actual results
@@ -1568,6 +1610,346 @@ async def simulate_algorithm_performance(
         "average_hop_count": metrics["hop_count_avg"],
         "throughput_bundles_per_hour": delivered_bundles / duration_hours
     }
+
+
+# Contact Plan CSV upload for explicit contact windows
+contact_plans = {}
+
+@app.post("/api/v2/contact_plan/upload", response_model=APIResponse)
+async def upload_contact_plan(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    description: str = Form("")
+):
+    """Upload contact plan CSV with explicit contact windows.
+
+    CSV format: source_id, target_id, start_time, end_time, data_rate_mbps
+    Times should be in ISO format or seconds from simulation start.
+    """
+    try:
+        content = await file.read()
+        csv_content = content.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(csv_content))
+
+        required_cols = ['source_id', 'target_id', 'start_time', 'end_time', 'data_rate_mbps']
+
+        contacts = []
+        for row in csv_reader:
+            if not all(col in row for col in required_cols):
+                raise ValueError(f"Missing required columns. Required: {required_cols}")
+
+            contacts.append({
+                'source_id': row['source_id'],
+                'target_id': row['target_id'],
+                'start_time': row['start_time'],
+                'end_time': row['end_time'],
+                'data_rate_mbps': float(row['data_rate_mbps']),
+                'priority': int(row.get('priority', 1))
+            })
+
+        plan_id = f"plan_{name.lower().replace(' ', '_')}_{int(datetime.now().timestamp())}"
+        contact_plans[plan_id] = {
+            'id': plan_id,
+            'name': name,
+            'description': description,
+            'contacts': contacts,
+            'created_at': datetime.now().isoformat() + "Z"
+        }
+
+        logger.info(f"Contact plan '{name}' uploaded with {len(contacts)} contact windows")
+
+        return APIResponse(
+            success=True,
+            message=f"Contact plan uploaded with {len(contacts)} contact windows",
+            data={'plan_id': plan_id, 'contact_count': len(contacts)}
+        )
+
+    except Exception as e:
+        logger.error(f"Contact plan upload failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/v2/contact_plan/list", response_model=APIResponse)
+async def list_contact_plans():
+    """List all uploaded contact plans."""
+    plans = [{'id': p['id'], 'name': p['name'], 'contact_count': len(p['contacts']), 'created_at': p['created_at']}
+             for p in contact_plans.values()]
+    return APIResponse(success=True, message="Contact plans retrieved", data={'plans': plans})
+
+
+@app.post("/api/v2/simulation/{simulation_id}/plan_change", response_model=APIResponse)
+async def apply_plan_change(simulation_id: str, change_config: dict):
+    """Apply mid-run contact plan change to a running simulation.
+
+    This allows modifying which nodes meet and contact durations during simulation.
+    """
+    if simulation_id not in simulation_store:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+
+    if simulation_id not in simulation_engines:
+        raise HTTPException(status_code=400, detail="Simulation must be running to apply plan changes")
+
+    try:
+        engine = simulation_engines[simulation_id]
+
+        change_type = change_config.get('type', 'modify_contacts')
+
+        if change_type == 'add_contacts':
+            # Add new contact windows
+            new_contacts = change_config.get('contacts', [])
+            for contact in new_contacts:
+                engine.add_contact_window(
+                    source_id=contact['source_id'],
+                    target_id=contact['target_id'],
+                    start_time=contact.get('start_time'),
+                    duration_seconds=contact.get('duration_seconds', 300),
+                    data_rate_mbps=contact.get('data_rate_mbps', 100.0)
+                )
+
+        elif change_type == 'remove_contacts':
+            # Remove contact windows between specific nodes
+            removals = change_config.get('removals', [])
+            for removal in removals:
+                engine.remove_contact_windows(
+                    source_id=removal['source_id'],
+                    target_id=removal['target_id']
+                )
+
+        elif change_type == 'modify_duration':
+            # Modify contact durations
+            modifications = change_config.get('modifications', [])
+            for mod in modifications:
+                engine.modify_contact_duration(
+                    source_id=mod['source_id'],
+                    target_id=mod['target_id'],
+                    duration_multiplier=mod.get('duration_multiplier', 1.0)
+                )
+
+        # Log the plan change event
+        change_event = {
+            'timestamp': datetime.now().isoformat(),
+            'type': change_type,
+            'config': change_config
+        }
+
+        if 'plan_changes' not in simulation_store[simulation_id]:
+            simulation_store[simulation_id]['plan_changes'] = []
+        simulation_store[simulation_id]['plan_changes'].append(change_event)
+
+        logger.info(f"Plan change applied to simulation {simulation_id}: {change_type}")
+
+        return APIResponse(
+            success=True,
+            message=f"Plan change '{change_type}' applied successfully",
+            data={'change_event': change_event}
+        )
+
+    except Exception as e:
+        logger.error(f"Plan change failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/simulation/{simulation_id}/buffer_levels", response_model=APIResponse)
+async def get_buffer_levels(simulation_id: str):
+    """Get per-node buffer fill levels for visualization."""
+    if simulation_id not in simulation_store:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+
+    if simulation_id not in simulation_engines:
+        return APIResponse(
+            success=True,
+            message="Simulation not running",
+            data={'buffer_levels': {}}
+        )
+
+    try:
+        engine = simulation_engines[simulation_id]
+        buffer_levels = engine.get_buffer_fill_levels()
+
+        return APIResponse(
+            success=True,
+            message="Buffer levels retrieved",
+            data={'buffer_levels': buffer_levels}
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get buffer levels: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/simulation/{simulation_id}/delay_distribution", response_model=APIResponse)
+async def get_delay_distribution(simulation_id: str):
+    """Get delivery delay distribution for analysis and CDF generation."""
+    if simulation_id not in simulation_store:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+
+    if simulation_id not in simulation_engines:
+        return APIResponse(
+            success=True,
+            message="Simulation not running",
+            data={'delays': [], 'statistics': {}}
+        )
+
+    try:
+        engine = simulation_engines[simulation_id]
+        delays = engine.get_delivery_delays()
+
+        if not delays:
+            return APIResponse(
+                success=True,
+                message="No deliveries yet",
+                data={'delays': [], 'statistics': {}}
+            )
+
+        # Calculate statistics
+        import statistics
+        sorted_delays = sorted(delays)
+        n = len(sorted_delays)
+
+        stats = {
+            'count': n,
+            'min': min(delays),
+            'max': max(delays),
+            'mean': statistics.mean(delays),
+            'median': statistics.median(delays),
+            'std_dev': statistics.stdev(delays) if n > 1 else 0,
+            'p25': sorted_delays[int(n * 0.25)] if n > 3 else sorted_delays[0],
+            'p75': sorted_delays[int(n * 0.75)] if n > 3 else sorted_delays[-1],
+            'p90': sorted_delays[int(n * 0.90)] if n > 9 else sorted_delays[-1],
+            'p95': sorted_delays[int(n * 0.95)] if n > 19 else sorted_delays[-1]
+        }
+
+        # Generate CDF data points
+        cdf_points = []
+        for i, delay in enumerate(sorted_delays):
+            cdf_points.append({'delay': delay, 'cumulative_prob': (i + 1) / n})
+
+        return APIResponse(
+            success=True,
+            message="Delay distribution retrieved",
+            data={
+                'delays': delays,
+                'statistics': stats,
+                'cdf_data': cdf_points[:100]  # Limit to 100 points for efficiency
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get delay distribution: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# E2/E3 Experiment Presets
+@app.get("/api/v2/experiment/presets", response_model=APIResponse)
+async def get_experiment_presets():
+    """Get predefined experiment configurations for E1/E2/E3."""
+    presets = {
+        'E1_protocol_comparison': {
+            'name': 'E1: Protocol Comparison',
+            'description': 'Compare Epidemic, PRoPHET, Spray-and-Wait at different node counts',
+            'routing_algorithms': ['epidemic', 'prophet', 'spray_and_wait'],
+            'variable': 'node_count',
+            'values': [16, 32, 48, 64],
+            'fixed_params': {
+                'duration': 6,
+                'bundle_rate': 1.0,
+                'buffer_size': 10485760,
+                'ttl_minutes': 60
+            }
+        },
+        'E2_buffer_size_impact': {
+            'name': 'E2: Buffer Size Impact',
+            'description': 'Measure impact of buffer sizes: 5MB, 20MB, 80MB',
+            'routing_algorithms': ['epidemic', 'prophet', 'spray_and_wait'],
+            'variable': 'buffer_size',
+            'values': [5242880, 20971520, 83886080],  # 5MB, 20MB, 80MB
+            'value_labels': ['5 MB', '20 MB', '80 MB'],
+            'fixed_params': {
+                'duration': 6,
+                'bundle_rate': 1.0,
+                'ttl_minutes': 60
+            }
+        },
+        'E3_ttl_impact': {
+            'name': 'E3: TTL Impact',
+            'description': 'Measure impact of TTL: 30, 120, 480 minutes',
+            'routing_algorithms': ['epidemic', 'prophet', 'spray_and_wait'],
+            'variable': 'ttl_minutes',
+            'values': [30, 120, 480],
+            'value_labels': ['30 min', '2 hours', '8 hours'],
+            'fixed_params': {
+                'duration': 12,
+                'bundle_rate': 1.0,
+                'buffer_size': 20971520
+            }
+        }
+    }
+
+    return APIResponse(
+        success=True,
+        message="Experiment presets retrieved",
+        data={'presets': presets}
+    )
+
+
+@app.post("/api/v2/experiment/run_preset", response_model=APIResponse)
+async def run_experiment_preset(config: dict):
+    """Run a predefined experiment (E1, E2, or E3)."""
+    preset_id = config.get('preset_id')
+    constellation_id = config.get('constellation_id', 'starlink')
+    ground_stations = config.get('ground_stations', ['gs_los_angeles', 'gs_tokyo'])
+
+    presets = (await get_experiment_presets()).data['presets']
+
+    if preset_id not in presets:
+        raise HTTPException(status_code=400, detail=f"Unknown preset: {preset_id}")
+
+    preset = presets[preset_id]
+    results = {}
+
+    try:
+        for value in preset['values']:
+            # Build experiment config for this variable value
+            exp_config = preset['fixed_params'].copy()
+            exp_config[preset['variable']] = value
+
+            for algorithm in preset['routing_algorithms']:
+                key = f"{algorithm}_{value}"
+                logger.info(f"Running {preset_id}: {algorithm} with {preset['variable']}={value}")
+
+                # Run simulation with buffer_size and ttl from exp_config
+                sim_results = await simulate_algorithm_performance_realtime(
+                    constellation_id=constellation_id,
+                    routing_algorithm=algorithm,
+                    duration_hours=exp_config['duration'],
+                    bundle_rate=exp_config['bundle_rate'],
+                    ground_stations=ground_stations,
+                    rf_band=config.get('rf_band', 'ka-band'),
+                    weather_enabled=config.get('weather_enabled', False),
+                    buffer_size=exp_config.get('buffer_size', 10485760),
+                    ttl_minutes=exp_config.get('ttl_minutes', 60)
+                )
+
+                results[key] = {
+                    **sim_results,
+                    'variable_name': preset['variable'],
+                    'variable_value': value
+                }
+
+        return APIResponse(
+            success=True,
+            message=f"Experiment preset {preset_id} completed",
+            data={
+                'preset': preset,
+                'results': results,
+                'variable': preset['variable'],
+                'algorithms': preset['routing_algorithms']
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Preset experiment failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v2/experiment/{experiment_id}/results", response_model=APIResponse)
