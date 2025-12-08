@@ -1144,7 +1144,7 @@ const SimulationView = () => {
           </div>
         </div>
         
-        <div className="relative h-[600px] bg-black">
+        <div className="relative h-[700px] bg-black">
           {view3D ? (
             <>
               <SatelliteVisualization
