@@ -1210,62 +1210,6 @@ const SimulationView = () => {
             isRunning={isSimulationRunning}
           />
           
-          {/* Network Statistics Panel */}
-          <div className="bg-black border border-blue-400 p-4">
-            <div className="text-blue-400 text-sm mb-4 font-mono">
-              ◤ NETWORK STATISTICS ◥
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Total Contacts:</span>
-                  <span className="text-green-400">{realTimeData?.contacts?.length || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Active Contacts:</span>
-                  <span className="text-yellow-400">
-                    {realTimeData?.contacts?.filter(c => c.isActive)?.length || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Avg Contact Duration:</span>
-                  <span className="text-cyan-400">
-                    {(realTimeData?.metrics?.avgContactDuration || 0).toFixed(1)}s
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Data Transferred:</span>
-                  <span className="text-purple-400">
-                    {((realTimeData?.metrics?.dataTransferred || 0) / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Routing Efficiency:</span>
-                  <span className="text-green-400">
-                    {(((realTimeData?.metrics?.overhead || 1) > 0 ? (1 / (realTimeData?.metrics?.overhead || 1)) : 1) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Network Load:</span>
-                  <span className="text-orange-400">
-                    {((realTimeData?.metrics?.avgBufferUtilization || 0) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Packets in Flight:</span>
-                  <span className="text-blue-400">{realTimeData?.bundles?.active || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-300">Success Rate:</span>
-                  <span className="text-green-400">
-                    {((realTimeData?.metrics?.deliveryRatio || 0) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       ) : (
         <div className="text-center text-gray-400 py-8">
